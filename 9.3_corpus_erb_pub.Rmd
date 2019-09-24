@@ -1,0 +1,372 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+    self_contained: no
+  pdf_document:
+    latex_engine: xelatex
+---
+
+
+# Intro
+
+This corpus assembles the texts published in the DIGAR (Digital Archive) database of the Estonian National Library, that can be freely shared.
+
+
+## Corpus processing
+
+Corpus comprises of print publications that were represented and accessible via the Estonian National Bibliography. Raw .txt files simply contain the text exported from the pdf-s (via pdf2txt). Unless the text was "born digital", these texts contain the automatically transcribed texts via OCR over a long period of time. The quality of the text depends on the quality of the processed image and the tools available when the text was recognized. While these texts are not suitable for all types of study, there are many possibilities for used even with 90%, 75% or 50% accuracy. The accuracy may also be improved in future editions.
+
+The processed texts have been tokenized and analyzed with the EstNLTK python package (v. 1.4.1, \cite@ORASMAA16.332). This has been done with two regimes: 1) 'simple' - with guessing turned off - to distinguish definitely recognizable wordforms from non-standard spellings and bad OCR, 2) 'guess' - with guessing turned on - to give a best guess for the identity of the word based on the contextual clues used in EstNLTK. Before tokenization, special characters (except for ''„“_ -.,;":?()õäöüÕÄÖÜ[]\/) were removed from the texts, and characters with diacritics that do not usually occur in Estonian language texts and may be OCR artefacts were simplified (e.g. î -> i, è -> e, ç -> c). Additionally, because OCR texts often mistakenly inserted blanks within words (e.g. s õ r e n d a t u d) in some lines, in this case using two or more blanks for word separation, the presence of multiple 1-letter words or multiple 2-blank separations was checked on each line. If this was the case, the shorter blanks were removed and longer blanks relied on for word boundaries. This may have in some cases joined some words, and was unable to find all the examples, however improved the processing of the corpus.
+
+The processed texts are stored as .tsv-s that contain the variables posted below (categories described here - https://estnltk.github.io/estnltk/1.4.1/tutorials/text.html#morphological-analysis). The suffix of the variable indicates the regime used.
+
+- word_texts_simple
+- lemmas_simple
+- postag_descriptions_simple
+- word_texts_guess
+- lemmas_guess
+- roots_guess
+- root_tokens_guess
+- forms_guess
+- endings_guess
+- postags_guess
+- postag_descriptions_guess
+
+Whether this text processing helps your analysis depends on your particular question. 
+
+
+## Overview of the processed corpus
+
+```{r setup libraries,echo=F,warning=F,results='hide'}
+
+library(data.table)
+library(tidyverse)
+library(here)
+#library(ggplot2)
+#library(stringr)
+```
+
+
+
+
+
+```{r process files for corpus, eval=F, echo=F, warning=F}
+
+
+set <- list.files(path=here::here("corpus/"),recursive=T,full.names=T)
+file.sizes <- file.size(set)
+nrows_set <- sapply(set, function(f) nrow(fread(f,select = 3L,fill=T)) )
+nrows_unsolved <- sapply(set, function(f) nrow(fread(f,select = 3L,fill=T,header=T)[lemmas_simple==""]) )
+
+
+nrows_nopunct <- sapply(set, function(f) nrow(fread(f,select = 2:3,fill=T,header=T)[nchar(word_texts_simple)>2][!str_detect(word_texts_simple,"[[0-9][:punct:]““…–—”‘”’‚„‹ˮ]")]) ) #if it is only punctuations, and they are going to be only punctuations because they are tokenized such
+nrows_nopunct_unsolved <- sapply(set, function(f) nrow(fread(f,select = 2:3,fill=T,header=T)[nchar(word_texts_simple)>2][!str_detect(word_texts_simple,"[[0-9][:punct:]““…–—”‘”’‚„‹ˮ]")][lemmas_simple==""]) )
+
+
+fileinfo <- data.table(fileplusdir=set,filesize=file.sizes)
+fileinfo[,filename:=basename(fileplusdir)]
+fileinfo[,nrows:=nrows_set]
+fileinfo[,nrows_unsolved:=nrows_unsolved]
+fileinfo[,prop_unsolved:=nrows_unsolved/(nrows-1)]
+fileinfo[,nrows_nopunct:=nrows_nopunct]
+fileinfo[,nrows_nopunct_unsolved:=nrows_nopunct_unsolved]
+fileinfo[,prop_nopunct_unsolved:=nrows_nopunct_unsolved/(nrows_nopunct-1)]
+
+
+#fwrite(fileinfo,"fileinfo_stored_pub.tsv",sep="\t")
+fileinfo <-fread(here::here("data/fileinfo_stored_pub.tsv"),sep="\t")
+
+
+```
+
+
+
+
+```{r read data from file for speed, echo=F, warning=F}
+works <- fread(here::here("data/ERB_works_processed_v_29.07.2018.tsv"),sep="\t")
+works[,filename:=paste0(RRid,".pdf.txt.tsv")]
+fileinfo <-fread(here::here("data/fileinfo_stored_pub.tsv"),sep="\t")
+with_finfo <- merge(works,fileinfo,by="filename") #will keep only books here
+
+prop_collected <- merge(works[str_detect(links,"digar.nlib.ee")],fileinfo,by="filename",all=T) #will keep only books here
+prop_collected[,has_file:=F]
+#prop_collected[!is.na(filename)&prop_nopunct_unsolved>0.01&nrows_nopunct>50,has_file:=T]
+prop_collected[!is.na(prop_nopunct_unsolved),has_file:=T]
+
+prop_collected[str_detect(litsents,"Vabakasutus")&is.na(prop_unsolved)] #2300 teksti vabakasutuses, kus pole faili.
+
+valid_texts <- with_finfo[prop_nopunct_unsolved>0.01][nrows_nopunct>50]#[,.(RRid,aeg,autor_name,comptitle,meta_eks2,genres,koht,kirjastus)]
+
+
+
+```
+
+
+
+## OCR and lemmatization success
+
+Two periods:
+
+1) Before 1880s, "old writing tradition".
+2) Before 1920s, w commonly used instead of V.
+
+
+```{r simple annotation success, echo=F, warning=F, fig.height=4, fig.width=8}
+
+#ah, dam, need to exclude punctuation too, that'll be slower
+#with_finfo[nrows_nopunct>50]%>%
+#  ggplot(aes(x=aeg,y=prop_unsolved))+
+#  geom_point(alpha=0.1)
+
+
+#here without punctuation
+with_finfo[nrows_nopunct>50]%>%
+  ggplot(aes(x=aeg,y=prop_nopunct_unsolved))+
+  geom_vline(aes(xintercept=1880),colour="red",alpha=0.5)+
+  geom_vline(aes(xintercept=1920),colour="blue",alpha=0.5)+
+  geom_point(alpha=0.1)
+
+```
+
+
+
+The distribution of texts over time, and compared to the registered prints.
+
+
+
+
+```{r plot corpus overview, echo=F, warning=F, fig.height=4, fig.width=8}
+
+
+p1 <- valid_texts[,.N,by=aeg][,set:="corpus"] %>%
+#rbind(old2_unique[,.N,by=aeg][,set:="totals"]) %>%
+  ggplot(aes(x=aeg,y=N,fill=set))+
+  geom_bar(stat="identity",position="dodge")+
+  scale_fill_manual(values=c("black","grey"))+
+  theme_bw()
+  
+
+
+p2 <- valid_texts[,.N,by=aeg][aeg>1800&aeg<1981][,set:="corpus"] %>%
+rbind(works[,.N,by=aeg][aeg>1800&aeg<1981][,set:="totals"]) %>%
+  ggplot(aes(x=aeg,y=N,fill=set))+
+  geom_bar(stat="identity",position="dodge")+
+  scale_fill_manual(values=c("black","grey"))+
+  theme_bw()
+  
+#gridExtra::grid.arrange(p1,p2,nrow=1,ncol=2)
+
+p1
+
+p2
+
+prop_collected[,.N,by=.(aeg,has_file)][aeg>1800&aeg<2081][,set:="corpus"] %>%
+  ggplot(aes(x=aeg,y=N,fill=has_file))+
+  geom_bar(stat="identity",position="stack")+
+  #scale_fill_manual(values=c("black","grey"))+
+  theme_bw()
+  
+
+genres <- prop_collected[,.(genre=unlist(str_split(genres,"\\$a"))),by=.(RRid,aeg,koht,kirjastus,autor_id,comptitle,meta_eks2,genres,has_file)][genres!=""&genre!=""&!is.na(genre)|genres==""|is.na(genres)][,genre:=trimws(str_replace_all(genre,"\\.",""))]
+
+library(ENB)
+genres <- data.table(harmonize_genres(data.table(genres)))
+
+genrelist <- genres[,.N,by=genre][order(-N)]
+genrelist <- genres[,.N,by=.(genre,has_file)][order(-N)]
+genrelist <- genres[,.N,by=.(genre_standardized,has_file)][order(-N)]
+
+
+genres[,.N,by=.(genre_standardized,has_file,aeg)][order(-N)][aeg>1800&aeg<2081] %>%
+  ggplot(aes(x=aeg,y=N,fill=has_file))+
+  geom_bar(stat="identity",position="stack")+
+  #scale_fill_manual(values=c("black","grey"))+
+  theme_bw()+
+  facet_wrap(~genre_standardized,scales="free")
+  
+genres[,decade:=floor(aeg/10)*10]
+genres[,decade2:=(floor(aeg/20)*20)+10]#+10 to center for the plot
+genres_st <-genres[,.(genres_all=paste(genre_standardized,sep=" ",collapse= " ")),by=.(RRid,aeg,decade,decade2,comptitle,genres,meta_eks2,has_file)]
+genres_st[,genres_all:=paste(unique(unlist(str_split(trimws(genres_all)," "))),sep="",collapse= " "),by=.(RRid,aeg,decade,comptitle,genres,meta_eks2,has_file)]
+#genres_st[101,trimws(genres_all)]
+genres_melt <-  genres_st[,.(genre_uniques=unlist(str_split(genres_all, " "))), by=.(RRid,aeg,decade,decade2,comptitle,genres,meta_eks2,has_file)]
+#hacky
+genres_melt[,n_genres:=.N,by=.(RRid,aeg,decade,comptitle,genres,meta_eks2,has_file)]
+genres_melt <- genres_melt[!(n_genres>1&genre_uniques=="")][order(aeg)]
+genres_melt[,n_genres:=.N,by=.(RRid,aeg,decade,comptitle,genres,meta_eks2,has_file)]
+
+genres_melt[,.N,by=.(genre_uniques,has_file,decade)][order(-N)][decade>1799&decade<1981] %>%
+  ggplot(aes(x=decade,y=N,fill=has_file))+
+  geom_bar(stat="identity",position="stack")+
+  #scale_fill_manual(values=c("black","grey"))+
+  theme_bw()+
+  facet_wrap(~genre_uniques,scales="free")
+
+```
+
+
+The distribution of books between cities where they were published.
+
+
+```{r plot corpus cities, echo=F, warning=F, fig.height=4, fig.width=8}
+
+
+#all cities with more than 10 books in corpus
+plotdata_kohad <- valid_texts[!is.na(koht)&koht!=""][,.N,by=koht][order(N)][,koht:=factor(koht,levels=unique(koht))][N>10]
+plotdata_kohad %>%
+    ggplot(aes(y=N,x=koht))+
+    geom_bar(stat="identity",position="dodge")+
+    geom_text(data=plotdata_kohad[(nrow(plotdata_kohad)-1):nrow(plotdata_kohad)], aes(label=N),size = 3, position = position_stack(vjust = 1.05))+
+    geom_text(data=plotdata_kohad[!(nrow(plotdata_kohad)-1):nrow(plotdata_kohad)],aes(label=N),size = 3, hjust = -0.5)+# )+
+    #coord_cartesian(ylim=c(0,2700))+
+    coord_flip()+
+    theme_bw()+
+    NULL
+    
+
+plotdata_autorid <- valid_texts[!is.na(autor_id)&autor_id!=""][,.N,by=autor_id][order(N)][,autor_id:=factor(autor_id,levels=unique(autor_id))][N>5]
+plotdata_autorid %>%
+    ggplot(aes(y=N,x=autor_id))+
+    geom_bar(stat="identity",position="dodge")+
+    geom_text(data=plotdata_autorid[(nrow(plotdata_autorid)-1):nrow(plotdata_autorid)], aes(label=N),size = 3, position = position_stack(vjust = 1.05))+
+    geom_text(data=plotdata_autorid[!(nrow(plotdata_autorid)-1):nrow(plotdata_autorid)],aes(label=N),size = 3, hjust = -0.5)+# )+
+    #coord_cartesian(ylim=c(0,2700))+
+    coord_flip()+
+    theme_bw()+
+    NULL
+
+
+
+
+```
+
+
+
+The distribution of texts across genres, and as proportion of registered texts.
+
+```{r plot corpus genres, echo=F, warning=F, fig.height=4, fig.width=8}
+
+genres_melt <-fread(here::here("data/ERB_genres_processed_v_29.07.2018.tsv"),sep="\t")
+genres_melt_m <- merge(genres_melt,with_finfo,by="RRid",all=T)
+genres_melt_m[!is.na(nrows_nopunct_unsolved),has_file:=T]
+genres_melt_m[is.na(nrows_nopunct_unsolved),has_file:=F]
+genres_melt_m[!is.na(autor_id),has_autor_id:=T]
+genres_melt_m[is.na(autor_id),has_autor_id:=F]
+
+sequence <- genres_melt_m[!is.na(genre_uniques)&genre_uniques!=""][,.N,by=.(genre_uniques)][order(N)][,unique(genre_uniques)]
+plotdata_genres <- genres_melt_m[!is.na(genre_uniques)&genre_uniques!=""][,.N,by=.(genre_uniques,has_file)][order(N)][,genre_uniques:=factor(genre_uniques,levels=sequence)][N>5]
+plotdata_genres %>%
+    ggplot(aes(y=N,x=genre_uniques,fill=has_file))+
+    geom_bar(stat="identity",position="stack")+
+    geom_text(data=plotdata_genres[(nrow(plotdata_genres)-1):nrow(plotdata_genres)], aes(label=N),size = 3, position = position_stack(vjust = 1.10))+
+    geom_text(data=plotdata_genres[!(nrow(plotdata_genres)-1):nrow(plotdata_genres)][has_file==F],aes(label=N),size = 3, hjust = -0.5)+# )+
+    geom_text(data=plotdata_genres[!(nrow(plotdata_genres)-1):nrow(plotdata_genres)][has_file==T],aes(label=N),size = 3, hjust = -0.1)+# )+
+    #coord_cartesian(ylim=c(0,2700))+
+    coord_flip()+
+    theme_bw()+
+    NULL
+
+
+
+```
+
+
+
+
+
+
+
+## Usage
+
+A possible rule of thumb can be to take only texts with at least 50 recognized tokens within text.
+
+
+How much unsuccessful OCR can interfere with your processing depends on your goals. For tracking the presence of particular keywords, the OCR texts can work quite well. For tracking more general measures, like type-token ratio, unsuccessful OCR can cause significant problems.
+
+
+Included in this is an example of how to search for particular keywords within the text, and plot the findings. Both simple and averages per year. Or number of texts within the corpus that year, or number of tokens within the corpus that year...
+
+
+```{r an example use case too mb, echo=F, warning=F, fig.height=4, fig.width=8}
+
+#all of the literature in the text
+set <- genres_melt_m[genre_uniques=="iluk"&has_file==T]
+
+#this command only reads two columns to save memory
+corpus_texts <- rbindlist(lapply(set[,fileplusdir], fread,select = 2:3, header = T,sep="\t", encoding="UTF-8"), fill=TRUE, idcol="id")[,id:=set[,fileplusdir][id]][nchar(word_texts_simple)>2][!str_detect(word_texts_simple,"[[0-9][:punct:]““…–—”‘”’‚„‹ˮ]")]
+corpus_texts[,word_texts_simple:=tolower(word_texts_simple)]
+
+types <- unique(corpus_texts)
+words <- types[,uniqueN(id),word_texts_simple][V1>10]
+
+search_set <- data.table(searchword=c("saia","leiba","suppi"))
+
+stringcountsbyid <-merge(search_set,corpus_texts,by.x="searchword",by.y="word_texts_simple",all.x=F,all.y=F)[,.(counts=.N), by=.(searchword,id)]
+with_vars <- merge(with_finfo,stringcountsbyid,by.x="fileplusdir",by.y="id")
+
+with_vars%>%
+  ggplot(aes(x=aeg,y=counts,colour=searchword))+
+  stat_smooth(se=F)+
+  geom_jitter(alpha=0.5)
+
+
+set[,halfdecade:=(floor(aeg.x/5)*5)]
+set[genre_uniques=="iluk",iluk_n:=.N,by=halfdecade]
+
+with_vars[,halfdecade:=(floor(aeg/5)*5)]
+averages<-merge(with_vars,unique(set[,.(iluk_n,halfdecade)]),by.x="halfdecade",by.y="halfdecade")[,.N,by=.(halfdecade,searchword,iluk_n)][,prop:=N/iluk_n]
+
+averages[halfdecade>1840&halfdecade<1940]%>%
+  ggplot(aes(x=halfdecade,y=prop,colour=searchword))+
+  geom_text(aes(label=N))+
+  stat_smooth(se=F)+
+  geom_jitter(alpha=0.5)+
+  theme_bw()
+
+
+
+search_set <- data.table(searchword=c("wõi","ehk","või"))
+
+stringcountsbyid <-merge(search_set,corpus_texts,by.x="searchword",by.y="word_texts_simple",all.x=F,all.y=F)[,.(counts=.N), by=.(searchword,id)]
+
+with_vars <- merge(with_finfo,stringcountsbyid,by.x="fileplusdir",by.y="id")
+with_vars%>%
+  ggplot(aes(x=aeg,y=counts,colour=searchword))+
+  stat_smooth(se=F)+
+  geom_jitter(alpha=0.5)
+
+with_vars[str_detect(searchword,"või|wõi"),n_one:=sum(counts,na.rm = T),by=.(fileplusdir)][,prop:=n_one/sum(counts,na.rm=T),by=fileplusdir]%>%
+  filter(aeg>1800&aeg<1940)%>%
+  ggplot(aes(x=aeg,y=prop,colour=prop))+
+  stat_smooth(se=F)+
+  geom_jitter(alpha=0.5)+
+  scale_colour_gradient(low = "red", high = "green")
+
+
+```
+
+
+
+
+
+
+
+
+@InProceedings{ORASMAA16.332,
+author = {Siim Orasmaa and Timo Petmanson and Alexander Tkachenko and Sven Laur and Heiki-Jaan Kaalep},
+title = {EstNLTK - NLP Toolkit for Estonian},
+booktitle = {Proceedings of the Tenth International Conference on Language Resources and Evaluation (LREC 2016)},
+year = {2016},
+month = {may},
+date = {23-28},
+location = {Portorož, Slovenia},
+editor = {Nicoletta Calzolari (Conference Chair) and Khalid Choukri and Thierry Declerck and Marko Grobelnik and Bente Maegaard and Joseph Mariani and Asuncion Moreno and Jan Odijk and Stelios Piperidis},
+publisher = {European Language Resources Association (ELRA)},
+address = {Paris, France},
+isbn = {978-2-9517408-9-1},
+language = {english}
+}
+
+

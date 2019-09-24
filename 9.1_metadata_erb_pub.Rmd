@@ -1,0 +1,793 @@
+---
+title: "Metadata from ERB"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+    self_contained: no
+---
+
+## ERB metadata
+
+
+### Abstract
+
+Estonian National Bibliography is a metadata set that aims to collect information on all publications written in any language in Estonia and all texts written in Estonian in whichever country. In this set, only the publications in Estonian language are used. The dataset has been compiled in digital format since 2002. and aggregates the work of multiple institutions and generations in collecting the publication information.
+
+This dataset presents the Estonian National Bibliography dataset in wide instead of long format used in Marc21, with some of the variables that may be useful for text-mining studies. It includes information about 
+
+some variables have also been standardized
+
+Information on coding the variables can be found here: 
+
+Helpful information on the metadata available can be found here: http://data.digar.ee/#page5
+
+The rules followed in adding information on older books can be found here: http://www.elnet.ee/images/pdf/juhendid/vanaraamat_MARC21.pdf
+
+
+## Intro
+
+Converts the dataset into tidy format
+
+
+```{r setup2, echo=F, warning=F,results='hide'}
+
+library(data.table)
+library(tidyverse)
+library(here)
+#library(ggplot2)
+#library(stringr)
+```
+
+
+```{r convert long to wide format,eval=F, echo=F, warning=F}
+
+
+
+#100, 700 autor
+#245 artikli pealkiri
+# 260 $c  - ilmumisaasta
+# 260 $a $b = <dc:publisher> = Väljaande kirjastus ja ilumiskoht 
+#MARC21 540 = <dc:rights> = Juurdepääsu piirangu tähtaeg
+#MARC21 542 = <dc:rights> = Autoriõiguse märkus ja litsents 
+#773 $n = <dc:type> = Ajalehe kategooria Nt. päevaleht, maakonnaleht jn
+#artiklite pealkirjad ajalehtedes samuti - perioodika
+#773 = <dc:type> = Artikli ilmumise andmed 
+#773 $3 = <dc:type> = Väljaande laad: ajaleht, ajakiri, jätkväljaan
+#998 = <dc:identifier> = Viide täistekstile 
+#999 = <dc:type> = artikli tüüp 
+
+
+#less <- file3[Tags%in%c(542)]
+
+file3 <- fread(here::here("data/ERB_eestikeelne_raamat_July_2018.tsv"))
+less <- file3[Tags%in%c(100,245,246,260,700,100,500,542,650,655,752,856,"001")]
+
+#use 001 as main id for merging...
+#artiklite andmebaas siia kõrvale ka
+#773, siia juurde
+
+
+
+#less2 <- file3[Tag%in%c(998)]
+
+#c all, mis seal on...
+
+
+#str_extract("$aCon$tent","\\$aCon")
+#str_extract("$aCon$tent","\\$a[^\\$]+")
+str_replace("ConteĆµnt","Ćµ", "õ")
+#gsub("Ćµ", "õ", "Ćµontent")
+#gsub("ab","e","abc")
+less[,Content:=str_replace_all(Content, "Ćµ", "õ")]
+less[,Content:=str_replace_all(Content, "Ć¤", "ä")]
+less[,Content:=str_replace_all(Content, "Ć¼", "ü")]
+less[,Content:=str_replace_all(Content, "Ć¶", "ö")]
+less[,Content:=str_replace_all(Content, "Ć–", "Õ")]
+less[,Content:=str_replace_all(Content, "Ć", "Ü")]
+
+
+#Ć, Ü
+
+less[Tags==260]
+less[Tags==260,a:=str_extract(Content,"\\$a[^\\$]+")]
+less[Tags==260,b:=str_extract(Content,"\\$b[^\\$]+")]
+less[Tags==260,c:=str_extract(Content,"\\$c[^\\$]+")]
+less[Tags==260,e:=str_extract(Content,"\\$e[^\\$]+")]
+less[Tags==260,f:=str_extract(Content,"\\$f[^\\$]+")]
+
+less[Tags==260,koht:=str_replace(a,"\\$a","")]
+less[Tags==260&str_detect(koht,"Eesti")&!is.na(e),koht:=e]
+less[Tags==260,koht:=str_replace(koht,"\\[","")]
+less[Tags==260,koht:=str_replace(koht,"\\]","")]
+less[Tags==260,koht:=str_replace(koht," :","")]
+less[Tags==260,koht:=str_replace(koht,"\\$e","")]
+less[Tags==260,koht:=str_replace(koht,"\\(","")]
+
+less[Tags==260,kirjastus:=str_replace(b,"\\$b","")]
+less[Tags==260,aeg:=str_replace(c,"\\$cc","")]
+less[Tags==260,aeg:=str_replace(aeg,"\\$c","")]
+less[Tags==260,aeg:=str_replace(aeg,"\\.","")]
+less[Tags==260,aeg:=str_replace(aeg,"\\[","")]
+less[Tags==260,aeg:=str_replace(aeg,"\\]","")]
+less[Tags==260&str_detect(aeg,"\\-"),aeg:=str_extract(aeg,"\\-[0-9]+")]
+less[Tags==260,aeg:=str_replace(aeg,"\\-","NA")]
+less[Tags==260,aeg:=str_extract(aeg,"[0-9]+")]
+
+
+less[Tags==245,title:=str_extract(Content,"\\$a[^\\$]+")]
+less[Tags==245,title:=str_replace(title,"\\$a","")]
+less[Tags==245,subtitle:=str_extract(Content,"\\$b[^\\$]+")]
+less[Tags==245,subtitle:=str_replace(subtitle,"\\$b","")]
+less[Tags==245,autor:=str_extract(Content,"\\$c[^\\$]+")]
+less[Tags==245,autor:=str_replace(title,"\\$c","")]
+
+less[Tags==542,litsents:=str_extract(Content,"\\$l[^\\$]+")]
+less[Tags==542,litsents:=str_replace(litsents,"\\$l","")]
+
+less[Tags==100,autor_id:=Content]
+less[Tags==100,autor_name:=str_extract(Content,"\\$a[^\\$]+")]
+less[Tags==100,autor_dates:=str_extract(Content,"\\$d[^\\$]+")]
+
+less[Tags==700,teised_autorid:=Content]
+#less[Tags==700,autor_dates:=str_extract(Content,"\\$d[^\\$]+")]
+
+check <- less[Tags==500]
+
+less[Tags=="001",RRid:=Content]
+less[Tags==500,meta:=Content]
+
+less[Tags==500,meta_eks:=str_extract(meta,"[0-9]+ eks")]
+less[Tags==500,meta_kop:=str_extract(meta,"[0-9]+ kop")]
+
+
+less[Tags==500,fraktuur:=str_extract(meta,"[Ff]raktuur")]
+less[Tags==500,antiikva:=str_extract(meta,"[Aa]ntiik")]
+
+less[Tags==650,keel:=Content]
+less[Tags==655,genres:=paste0(Content)]
+less[Tags==752,print:=Content]
+less[Tags==856,links:=paste0(Content)]
+
+#use 001 as tag
+#file3[Tags=="001"]#[.N]
+#file3[Tags=="072"]#[.N]
+#file3[Tags=="080"]#[.N]
+#file3[Tags=="998"]#[.N]
+#file3[Tags=="856"]
+
+#file3[RecordNumber==102852]
+
+
+
+#save <- file3[RecordNumber==102845]
+#save <- file3[RecordNumber==110338]
+
+
+
+#
+#less[!is.na(links)]
+
+works <- dcast(melt(less[,.(RecordNumber,c,aeg,koht,kirjastus,title,subtitle,autor,autor_id,autor_name,autor_dates,teised_autorid,RRid,meta,meta_eks,meta_kop,fraktuur,antiikva,print,keel,genres,links,litsents)],id.vars=c("RecordNumber"))[!is.na(value)],RecordNumber~variable,fun.aggregate= function(x) paste(x, collapse=""), value.var = "value")
+#works has 193k works
+
+
+works[,aeg:=str_replace(aeg,"\\?","")]
+works[,aeg2:=as.numeric(aeg)]
+works[,comptitle:=paste0(title,subtitle,collapse=" "),by=RecordNumber]
+works[,meta_eks2:=as.numeric(str_extract(meta_eks,"[0-9]+"))]
+works[,decade:=floor(aeg/10)*10]
+
+works[,aeg:=as.numeric(aeg)]
+#fix a few processing errors manually
+#works[!is.na(aeg)&aeg<1500]
+#works[!is.na(aeg)&aeg>2020]
+works[RecordNumber==184477,aeg:=2016]
+works[RecordNumber==37545,aeg:=1921]
+works[RecordNumber==37867,aeg:=1921]
+works[RecordNumber==138139,aeg:=1895] #adding middle value to 189-something
+
+
+#fwrite(works,"data/ERB_works_v_29.07.2018.tsv",sep="\t")
+
+```
+
+
+```{r read the metadata from file for speed, echo=F, warning=F}
+
+works <- fread(here::here("data/ERB_works_v_29.07.2018.tsv"),sep="\t")
+works[,aeg:=as.numeric(aeg)]
+works <- works[order(aeg)]
+
+```
+
+
+## Summary
+
+The dataset has altogether information on `r nrow(works)` printed items. Over time the distribution is the following.
+
+```{r summary data, echo=F, warning=F, fig.height=4, fig.width=8}
+
+#nrow(works)
+
+works[,aeg:=as.numeric(aeg)][aeg< 2020&aeg>1800] %>%
+  ggplot(aes(x=aeg))+geom_histogram(binwidth=1)+
+  theme_bw()
+
+#summary(works$aeg)
+
+#maybe colour main overview by era?
+
+```
+
+```{r standardize cities, echo=F, warning=F}
+
+
+works[,koht_orig:=koht]
+works[,koht:=str_replace(koht,";","")]
+works[,koht:=str_replace(koht,",","")]
+works[,koht:=str_replace(koht,"s$","")]
+works[,koht:=str_replace(koht,"l$","")]
+
+
+#works <- works#[!is.na(koht),.N,by=koht]
+works <- works[,koht:=str_replace_all(koht,"s$","")]
+works <- works[,koht:=str_replace_all(koht,"l$","")]
+#works <- works[!duplicated(works)]
+#places[places!=""&places!="S.l."&places!="S.l.,"&places!="S. l."&places!="S. l.,"]
+works <- works[koht!=""&koht!="S.l."&koht!="S.l.,"&koht!="S. l."&koht!="S. l.,"]
+works[str_detect(koht,"Paide"),koht:="Paide"]
+works[str_detect(koht,"Weissenstein"),koht:="Paide"]
+works[str_detect(koht,"Вейсенштейн"),koht:="Paide"]
+works[str_detect(koht,"Вейссенштейн"),koht:="Paide"]
+works[str_detect(koht,"Haapsalu"),koht:="Haapsalu"]
+works[str_detect(koht,"Hapsa"),koht:="Haapsalu"]
+works[str_detect(koht,"Гапсаль"),koht:="Haapsalu"]
+
+works[str_detect(koht,"Keila"),koht:="Keila"]
+works[str_detect(koht,"Rakvere"),koht:="Rakvere"]
+works[str_detect(koht,"Wesenberg"),koht:="Rakvere"]
+works[str_detect(koht,"Везенберг"),koht:="Rakvere"]
+
+works[,koht:=str_replace_all(koht,"w","v")]
+works[,koht:=str_replace_all(koht,"W","V")]
+works[,koht:=str_replace_all(koht,"\\?","")]
+works[str_detect(koht,"Tall"),koht:="hotell Tallinn"]
+works[str_detect(koht,"Talinn"),koht:="hotell Tallinn"]
+works[str_detect(koht,"Reva"),koht:="hotell Tallinn"]
+works[str_detect(koht,"Revel"),koht:="hotell Tallinn"]
+works[str_detect(koht,"Ревель"),koht:="hotell Tallinn"]
+works[str_detect(koht,"Reve"),koht:="hotell Tallinn"]
+works[str_detect(koht,"hotell Tallinn"),koht:="Tallinn"]
+works[str_detect(koht,"Kures"),koht:="Kuressaare"]
+works[str_detect(koht,"Kurres"),koht:="Kuressaare"]
+works[str_detect(koht,"Arensburg"),koht:="Kuressaare"]
+works[str_detect(koht,"Аренсбург"),koht:="Kuressaare"]
+
+
+works[str_detect(koht,"Rakwere"),koht:="Rakvere"]
+works[str_detect(koht,"Rakvere"),koht:="Rakvere"]
+works[str_detect(koht,"Tartu"),koht:="Tartu"]
+works[str_detect(koht,"Taaralinn"),koht:="Tartu"]
+works[str_detect(koht,"Jurjev"),koht:="Tartu"]
+works[str_detect(koht,"Jürjev"),koht:="Tartu"]
+works[str_detect(koht,"Юрьев"),koht:="Tartu"]
+#works[str_detect(koht,"Jurjew"),koht:="Tartu"]
+works[str_detect(koht,"Dorpat"),koht:="Tartu"]
+works[str_detect(koht,"Derpt"),koht:="Tartu"]
+works[str_detect(koht,"Дерпт"),koht:="Tartu"]
+
+works[str_detect(koht,"Tarto"),koht:="Tartu"]
+works[str_detect(koht,"Leningrad"),koht:="Peterburi"]
+works[str_detect(koht,"Leningraad"),koht:="Peterburi"]
+works[str_detect(koht,"Peterburg"),koht:="Peterburi"]
+works[str_detect(koht,"Peterburi"),koht:="Peterburi"]
+works[str_detect(koht,"Petrograd"),koht:="Peterburi"]
+works[str_detect(koht,"Петроград"),koht:="Peterburi"]
+works[str_detect(koht,"Петрогад"),koht:="Peterburi"]
+works[str_detect(koht,"Петербург"),koht:="Peterburi"]
+works[str_detect(koht,"Leeningrad"),koht:="Peterburi"]
+works[str_detect(koht,"Leeningraad"),koht:="Peterburi"]
+works[str_detect(koht,"Peeterburg"),koht:="Peterburi"]
+works[str_detect(koht,"Peeterburi"),koht:="Peterburi"]
+works[str_detect(koht,"СПБ"),koht:="Peterburi"]
+works[str_detect(koht,"Ленинград"),koht:="Peterburi"]
+
+works[str_detect(koht,"Немме"),koht:="Nõmme"] #can be from other Tallinn's too
+works[str_detect(koht,"Gutmannsbach"),koht:="Häädemeeste"]
+
+works[str_detect(koht,"Viljandi"),koht:="Viljandi"]
+works[str_detect(koht,"Fellin"),koht:="Viljandi"]
+works[str_detect(koht,"Феллин"),koht:="Viljandi"]
+works[str_detect(koht,"Pärnu"),koht:="Pärnu"]
+works[str_detect(koht,"Perno"),koht:="Pärnu"]
+works[str_detect(koht,"Pernu"),koht:="Pärnu"]
+works[str_detect(koht,"Pernov"),koht:="Pärnu"]
+works[str_detect(koht,"Pernau"),koht:="Pärnu"]
+works[str_detect(koht,"Пернов"),koht:="Pärnu"]
+works[str_detect(koht,"Põltsamaa"),koht:="Põltsamaa"]
+works[str_detect(koht,"Oberpahlen"),koht:="Põltsamaa"]
+
+works[str_detect(koht,"Narva"),koht:="Narva"]
+works[str_detect(koht,"Нарва"),koht:="Narva"]
+works[str_detect(koht,"Riga"),koht:="Riia"]
+works[str_detect(koht,"Riia"),koht:="Riia"]
+works[str_detect(koht,"Рига"),koht:="Riia"]
+works[str_detect(koht,"Rija"),koht:="Riia"]
+works[str_detect(koht,"Ria"),koht:="Riia"]
+works[str_detect(koht,"Valga"),koht:="Valga"]
+works[str_detect(koht,"Valk"),koht:="Valga"]
+works[str_detect(koht,"Валк"),koht:="Valga"]
+
+works[str_detect(koht,"Vändra"),koht:="Vändra"]
+works[str_detect(koht,"Keila"),koht:="Keila"]
+works[str_detect(koht,"Võru"),koht:="Võru"]
+works[str_detect(koht,"Verro"),koht:="Võru"]
+works[str_detect(koht,"Верро"),koht:="Võru"]
+works[str_detect(koht,"Helsingi"),koht:="Helsinki"]
+works[str_detect(koht,"Helsinki"),koht:="Helsinki"]
+works[str_detect(koht,"Nev-York"),koht:="New-York"]
+works[str_detect(koht,"Nev York"),koht:="New York"]
+works[str_detect(koht,"Москва"),koht:="Moskva"]
+works[str_detect(koht,"Vaivara"),koht:="Vaivara"]
+works[str_detect(koht,"Vaivara"),koht:="Vaivara"]
+works[str_detect(koht,"Eesti"),koht:="Eesti"]
+works[,koht:=trimws(koht)]
+
+
+
+
+```
+
+
+
+```{r plot cities, echo=F, warning=F, fig.height=4, fig.width=8}
+
+
+#Eesti is correct now, there's no information on cities on Eesti examples
+#see2 <- less[str_detect(koht,"Eesti")]
+#see <- set_unique[!is.na(koht)&koht!=""][,.N,by=koht]
+
+#all cities with more than 10 books in corpus
+plotdata_kohad <- works[!is.na(koht)&koht!=""][,.N,by=koht][order(N)][,koht:=factor(koht,levels=unique(koht))][N>100]
+plotdata_kohad %>%
+    ggplot(aes(y=N,x=koht))+
+    geom_bar(stat="identity",position="dodge")+
+    geom_text(data=plotdata_kohad[(nrow(plotdata_kohad)-1):nrow(plotdata_kohad)], aes(label=N),size = 3, position = position_stack(vjust = 1.05))+
+    geom_text(data=plotdata_kohad[!(nrow(plotdata_kohad)-1):nrow(plotdata_kohad)],aes(label=N),size = 3, hjust = -0.5)+# )+
+    #coord_cartesian(ylim=c(0,2700))+
+    coord_flip()+
+    theme_bw()+
+    NULL
+    
+
+plotdata_autorid <- works[!is.na(autor_id)&autor_id!=""][,.N,by=autor_id][order(N)][,autor_id:=factor(autor_id,levels=unique(autor_id))][N>100]
+plotdata_autorid %>%
+    ggplot(aes(y=N,x=autor_id))+
+    geom_bar(stat="identity",position="dodge")+
+    geom_text(data=plotdata_autorid[(nrow(plotdata_autorid)-1):nrow(plotdata_autorid)], aes(label=N),size = 3, position = position_stack(vjust = 1.05))+
+    geom_text(data=plotdata_autorid[!(nrow(plotdata_autorid)-1):nrow(plotdata_autorid)],aes(label=N),size = 3, hjust = -0.5)+# )+
+    #coord_cartesian(ylim=c(0,2700))+
+    coord_flip()+
+    theme_bw()+
+    NULL
+
+
+
+
+```
+
+
+```{r standardize kirjastus, echo=F, warning=F}
+
+works[,kirjastus:=trimws(kirjastus)]
+works[kirjastus=="[s.n.],",kirjastus:=""]
+works[kirjastus=="[s.n.],",kirjastus:=""]
+works[kirjastus=="[s.n.,",kirjastus:=""]
+works[kirjastus=="s.n.,",kirjastus:=""]
+works[kirjastus=="s.n.],",kirjastus:=""]
+works[kirjastus=="s. n.,",kirjastus:=""]
+works[kirjastus=="s.n,",kirjastus:=""]
+works[kirjastus=="s.n.",kirjastus:=""]
+
+works[,kirjastus:=str_replace_all(kirjastus,",","")]
+works[,kirjastus:=str_replace_all(kirjastus,"-"," ")]
+works[,kirjastus:=trimws(kirjastus)]
+works[,kirjastus:=tolower(kirjastus)]
+works[,kirjastus:=str_replace_all(kirjastus,"\\. ",".")]
+works[,kirjastus:=str_replace_all(kirjastus,"'i rmtkpl. ","")]
+works[kirjastus=="3.diviisi staap",kirjastus:="3.diviis"]
+works[kirjastus=="a.busch'i rmtkpl.",kirjastus:="a.busch"]
+works[kirjastus=="a.ingelman",kirjastus:="a.ingelmann"]
+works[kirjastus=="b.pärli",kirjastus:="br.pärli"]
+works[kirjastus=="c.mathiesen",kirjastus:="k.mattiesen"]
+works[kirjastus=="draamastuudio teater",kirjastus:="draamateater"]
+works[kirjastus=="eesti draama studio",kirjastus:="draamateater"]
+works[kirjastus=="eesti draamastuudio",kirjastus:="draamateater"]
+works[kirjastus=="eesti draamateater",kirjastus:="draamateater"]
+works[kirjastus=="draamateaater",kirjastus:="draamateater"]
+works[kirjastus=="eesti karskuseseltside kestoimekond",kirjastus:="eesti karskusliit"]
+works[kirjastus=="eesti karskusseltside kesktoimekond",kirjastus:="eesti karskusliit"]
+works[kirjastus=="eesti kirjanduse seltsi kodu uurimise toimkond",kirjastus:="eesti kirjanduse selts"]
+works[kirjastus=="eesti kirjanduse seltsi koolikirjanduse toimkond",kirjastus:="eesti kirjanduse selts"]
+works[kirjastus=="eesti kirjanduse kirjastus",kirjastus:="eesti kirjandus"]
+works[kirjastus=="eesti kubermangu kooliõp.vastastikkuse abiandm.selts",kirjastus:="eesti kubermangu kooliõpetajate vastastikku abiandmise selts"]
+works[kirjastus=="eestimaa konsistooriumi kirj kassa",kirjastus:="eestimaa konsistooriumi kirjastuskassa"]
+works[kirjastus=="eestimaa kooliõpetajate vastast.abiandm.selts",kirjastus:="eestimaa kooliõpetajate selts"]
+works[kirjastus=="eestimaa kooliõpetajate vastastiku abiandmise seltsi raamatukauplus",kirjastus:="eestimaa kooliõpetajate selts"]
+works[kirjastus=="eestimaa kooliõpetajate selts",kirjastus:="eesti õpetajate liit"]
+#works[kirjastus=="eestimaa kooliõpetajate vastastiku abiandmise selts (k./ü.\\"\\"\\"\\"kool\\"\\"\\"\\")",kirjastus:="eestimaa kooliõpetajate selts"]
+works[kirjastus=="eesti nmkü liit",kirjastus:="eesti noorte meeste kristlike ühingute liit"]
+works[kirjastus=="eesti põllutöö kirjanduse ühendus",kirjastus:="eesti põllutöö ühendus"]
+works[kirjastus=="eesti töörahva kommuuna kultuura ja ariduse valitsus",kirjastus:="eesti töörahwa kommuuna kultuura ja ariduse walitsus"]
+works[kirjastus=="estoonia muusika osakond",kirjastus:="estonia muusika osakond"]
+works[kirjastus=="f.brandt",kirjastus:=""]
+works[kirjastus=="fr.kreutzwald",kirjastus:="f.r.kreutzwald"]
+works[kirjastus=="füüsika õpetamise komisjon",kirjastus:="füüsika õpetamiskomisjon"]
+works[kirjastus=="g.pihlaka raamatukauplus",kirjastus:="g.pihlakas"]
+works[kirjastus=="g.pihlaka ramatukauplus",kirjastus:="g.pihlakas"]
+works[kirjastus=="g.pihlaka rmtkpl.",kirjastus:="g.pihlakas"]
+works[kirjastus=="pihlakas'e kirjastus",kirjastus:="g.pihlakas"]
+works[kirjastus=="g.vänja",kirjastus:="g.wänja kuluga rosenberg"]
+works[kirjastus=="g.v.rosenberg",kirjastus:="g.wänja kuluga rosenberg"]
+works[kirjastus=="g.v.rosenberg?",kirjastus:="g.wänja kuluga rosenberg"]
+works[kirjastus=="g.vänjag.rosenberg",kirjastus:="g.wänja kuluga rosenberg"]
+works[kirjastus=="hariduse ja sotsiaalministeerium",kirjastus:="hariduse ja sotsiaalministeerium"]
+works[kirjastus=="hariduse ja sotsiaalministeeriumi koolivalitsus",kirjastus:="hariduse ja sotsiaalministeerium"]
+works[kirjastus=="haridus ja sotsiaalministeerium",kirjastus:="hariduse ja sotsiaalministeerium"]
+works[kirjastus=="haridus ja sotsiaalministeeriumi koolivalitsus",kirjastus:="hariduse ja sotsiaalministeerium"]
+works[kirjastus=="haridusministeeriumi kirjastus",kirjastus:="haridusministeerium"]
+works[kirjastus=="haridusministeeriumi koolivalitsus",kirjastus:="haridusministeerium"]
+works[kirjastus=="haridusministeeriumi kutseoskuse osakond",kirjastus:="haridusministeerium"]
+works[kirjastus=="h.laasi raamatukauplus",kirjastus:="h.laasi rmtkpl."]
+works[kirjastus=="h.leoke'se rmtkpl.",kirjastus:="h.leoke"]
+works[kirjastus=="h.treffneri gümnaasium",kirjastus:="hugo treffneri gümnaasium"]
+works[kirjastus=="internationali traktaati selts osakond tartus",kirjastus:="internatsionaali traktaadiselts"]
+works[kirjastus=="internatsionali traktadiselts",kirjastus:="internatsionaali traktaadiselts"]
+works[kirjastus=="dreimanni rmtkpl.",kirjastus:="j.dreimann"]
+works[kirjastus=="j.dreimanni rmtkpl",kirjastus:="j.dreimann"]
+works[kirjastus=="j.treimann",kirjastus:="j.dreimann"]
+works[kirjastus=="j.e.meigas ja j.kehlmann",kirjastus:="j.e.meigase rmtkpl"]
+works[kirjastus=="j.g.marquardt)",kirjastus:="j.g.marquardt"]
+works[kirjastus=="j.h.gressel)",kirjastus:="j.h.gressel"]
+works[kirjastus=="j.kalkun'i raamatukauplus",kirjastus:="j.kalkuni raamatukauplus"]
+works[kirjastus=="j.keerdo",kirjastus:="j.kerdo"]
+works[kirjastus=="j.kerdo :",kirjastus:="j.kerdo"]
+works[kirjastus=="j.lass",kirjastus:="joh.lass"]
+works[kirjastus=="joh.semmiste",kirjastus:="joh.semm"]
+works[kirjastus=="j.palmgren'i raamatukauplus",kirjastus:="j.palmgren"]
+works[kirjastus=="j.palmgreni rmtkpl",kirjastus:="j.palmgren"]
+works[kirjastus=="j.palmgreni rmtkpl.",kirjastus:="j.palmgren"]
+works[kirjastus=="j.ploompuu rmtkpl.",kirjastus:="j.ploompuu"]
+works[kirjastus=="j.ploompuu raamatukauplus",kirjastus:="j.ploompuu"]
+works[kirjastus=="ploompuu raamatukauplus",kirjastus:="j.ploompuu"]
+works[kirjastus=="ploompuu",kirjastus:="j.ploompuu"]
+works[kirjastus=="j.reimanni pealadu",kirjastus:="j.reimanni rmtkpl"]
+works[kirjastus=="reimanni raamatukauplus",kirjastus:="j.reimanni rmtkpl"]
+works[kirjastus=="j.r.rerzold",kirjastus:="j.r.rezold"]
+works[kirjastus=="j.tamman",kirjastus:="j.tammann"]
+works[kirjastus=="jummala sanna väljalautamisse sõbbrad",kirjastus:="jummala sanna wäljalautamisse söbbrad"]
+works[kirjastus=="jutuleht :",kirjastus:="jutuleht"]
+works[kirjastus=="kaitseliidu peastaap",kirjastus:="kaitseliit"]
+works[kirjastus=="kaitseväe ühendatud õppeasutiste staap",kirjastus:="kaitseväe ühendatud õppeasutised"]
+works[kirjastus=="kaitseväe ühendatud õppeasutused",kirjastus:="kaitseväe ühendatud õppeasutised"]
+works[kirjastus=="kaitseväe ühendatud õppeasutuste ohvitseride kogu",kirjastus:="kaitseväe ühendatud õppeasutised"]
+works[kirjastus=="kaitsevägede ühendatud õppeasutiste staap",kirjastus:="kaitseväe ühendatud õppeasutised"]
+works[kirjastus=="kaitsevägede staabi ii osakond",kirjastus:="kaitsevägede staap"]
+works[kirjastus=="kaitsevägede staabi vi osakond",kirjastus:="kaitsevägede staap"]
+works[kirjastus=="kaitsevägede staabi v osakond",kirjastus:="kaitsevägede staap"]
+works[kirjastus=="kaitsevägede ülemjuhataja",kirjastus:="kaitsevägede staap"]
+works[kirjastus=="k.busch'i raamatukauplus",kirjastus:="k.busch"]
+works[kirjastus=="k.busch'i rmtkpl.",kirjastus:="k.busch"]
+works[kirjastus=="k.buschi rmtkpl.",kirjastus:="k.busch"]
+works[kirjastus=="kili & co.",kirjastus:="kili & co"]
+works[kirjastus=="kili & ko",kirjastus:="kili & co"]
+works[kirjastus=="kindralstaabi 6.osakond",kirjastus:="kindralstaap"]
+works[kirjastus=="kindralstaabi ii osakond",kirjastus:="kindralstaap"]
+works[kirjastus=="kindralstaabi iv osakond",kirjastus:="kindralstaap"]
+works[kirjastus=="kindralstaabi vi osakond",kirjastus:="kindralstaap"]
+works[kirjastus=="k.laurmanni rmtkpl.",kirjastus:="k.laurmann"]
+works[kirjastus=="kluge ja ströhmi raamatukauplus",kirjastus:="kluge ja ströhm"]
+works[kirjastus=="c.mattiesen",kirjastus:="k.mattiesen"]
+works[kirjastus=="kristliku rahwakirjanduse agentur",kirjastus:="kristliku rahvakirjanduse agentur"]
+works[kirjastus=="kristlik 7 da päeva adventistide eesti ühisus",kirjastus:="kristlik seitsmenda päewa adwentistide eesti ühisus"]
+works[kirjastus=="k.sööt ja g.roht",kirjastus:="k.sööt"]
+works[kirjastus=="küõ õppejaoskond",kirjastus:="kaitseväe ühendatud õppeasutised"]
+works[kirjastus=="küõ sõjakool",kirjastus:="kaitseväe ühendatud õppeasutised"]
+works[kirjastus=="küõ sõjakooli patarei",kirjastus:="kaitseväe ühendatud õppeasutised"]
+works[kirjastus=="mattiesen",kirjastus:="k.mattiesen"]
+works[kirjastus=="merekindluste staap",kirjastus:="merejõudude staap"]
+works[kirjastus=="merelaevastiku divisjoni staap",kirjastus:="merejõudude staap"]
+works[kirjastus=="merijõudude staap",kirjastus:="merejõudude staap"]
+works[kirjastus=="naiskodukaitse keskjuhatus",kirjastus:="naiskodukaitse"]
+works[kirjastus=="n.erna ;",kirjastus:="n.erna"]
+works[kirjastus=="noorte kotkaste päästaap",kirjastus:="noorte kotkaste peastaap"]
+works[kirjastus=="odamees carl sarap",kirjastus:="odamees"]
+works[kirjastus=="paltimaa õigeusus vennaste selts ja riia peetri pauluse vennasteselts",kirjastus:="paltimaa õigeusu vennaste selts"]
+works[kirjastus=="paltimaa õigeusu vennaste selts ja riia peetri pauluse vennaste selts",kirjastus:="paltimaa õigeusu vennaste selts"]
+works[kirjastus=="paltimaa õigeusu vennasteselts ja riia peetri pauluse vennaste selts",kirjastus:="paltimaa õigeusu vennaste selts"]
+works[kirjastus=="pärnu maakonnavalitsuse haridusosakond",kirjastus:="pärnu maakonna koolivalitsus"]
+works[kirjastus=="p.erna raamatukauplus",kirjastus:="p.erna"]
+works[kirjastus=="p.erna rmtkpl",kirjastus:="p.erna"]
+works[kirjastus=="p.erna rmtkpl.",kirjastus:="p.erna"]
+works[kirjastus=="postimehe rmtkpl",kirjastus:="postimees"]
+works[kirjastus=="postitalitus",kirjastus:="postivalitsus"]
+works[kirjastus=="posti telegraafi telefoni valitsus",kirjastus:="postivalitsus"]
+works[kirjastus=="r.krupp.",kirjastus:="r.krupp"]
+works[kirjastus=="r.põder'i rmtkpl",kirjastus:="r.põder"]
+works[kirjastus=="r.põderi rmtkpl.",kirjastus:="r.põder"]
+works[kirjastus=="schnackenburg",kirjastus:="schnakenburg"]
+works[kirjastus=="schnakenburg :",kirjastus:="schnakenburg"]
+works[kirjastus=="seiler",kirjastus:="seileri mootoritehas"]
+works[kirjastus=="s n.",kirjastus:=""]
+works[kirjastus=="s.n",kirjastus:=""]
+works[kirjastus=="s.n.",kirjastus:=""]
+works[str_detect(kirjastus,"^sõjav"),kirjastus:="sõjavägi"]
+works[str_detect(kirjastus,"^sõjamini"),kirjastus:="sõjaministeerium"]
+works[str_detect(kirjastus,"siuru"),kirjastus:="siuru"]
+works[kirjastus=="spadv eesti liit",kirjastus:="spadv kog.eesti liit"]
+works[kirjastus=="spadvk eesti liit",kirjastus:="spadv kog.eesti liit"]
+works[kirjastus=="spadwk eesti liit",kirjastus:="spadv kog.eesti liit"]
+works[kirjastus=="tallinna eesti kirjastuse ühisus ;",kirjastus:="tallinna eesti kirjastuse ühisus"]
+works[kirjastus=="tallinna eesti kirjastus ühisus",kirjastus:="tallinna eesti kirjastuse ühisus"]
+works[kirjastus=="tallinna kubermangu karskuse kuratoorium",kirjastus:="tallinna kubermangu karskuse kuratorium"]
+works[kirjastus=="tallinna kubermangu karskuse kuratoriumi väljaanne",kirjastus:="tallinna kubermangu karskuse kuratorium"]
+works[kirjastus=="tallinna kub.karskuse kuratorium",kirjastus:="tallinna kubermangu karskuse kuratorium"]
+works[kirjastus=="t.m.franzdorfi raamatukauplus",kirjastus:="t.m.franzdorf"]
+works[kirjastus=="t.mutsu teatrikirjastus",kirjastus:="t.mutsu"]
+works[kirjastus=="vanemuine",kirjastus:="vanemuise näitelava"]
+works[kirjastus=="vanemuise näielava",kirjastus:="vanemuise näitelava"]
+works[kirjastus=="vanemuise näitelava.",kirjastus:="vanemuise näitelava"]
+works[kirjastus=="vanemuise teater",kirjastus:="vanemuise näitelava"]
+works[kirjastus=="wanemuise näitelava",kirjastus:="vanemuise näitelava"]
+works[kirjastus=="wanemuise näitelawa",kirjastus:="vanemuise näitelava"]
+works[kirjastus=="tarto wannemuine selts",kirjastus:="vanemuise näitelava"]
+works[kirjastus=="võru õpetajateseminar",kirjastus:="võru õpetajate seminar"]
+works[kirjastus=="võru seminar",kirjastus:="võru õpetajate seminar"]
+works[kirjastus=="w.bormi pär.",kirjastus:="w.borm"]
+works[kirjastus=="f.w.borm",kirjastus:="w.borm"]
+works[str_detect(kirjastus,"noor eesti"),kirjastus:="noor eesti"]
+works[str_detect(kirjastus,"mutsu"),kirjastus:="t.mutsu"]
+works[str_detect(kirjastus,"ploompuu"),kirjastus:="j.ploompuu"]
+works[str_detect(kirjastus,"postimehe"),kirjastus:="postimees"]
+works[str_detect(kirjastus,"postimees"),kirjastus:="postimees"]
+works[str_detect(kirjastus,"h\\.laakmann"),kirjastus:="h.laakmann"]
+works[str_detect(kirjastus,"eesti kirjastus"),kirjastus:="eesti kirjastuse ühisus"]
+works[kirjastus=="eesti kirjanduseselts",kirjastus:="eesti kirjanduse selts"]
+works[kirjastus=="hermann",kirjastus:="k.a.hermann"]
+works[kirjastus=="hermann'i raamatukauplus",kirjastus:="k.a.hermann"]
+works[kirjastus=="pealadu hermanni rmtkpl.",kirjastus:="k.a.hermann"]
+works[kirjastus=="hermanni raamatukauplus",kirjastus:="k.a.hermann"]
+works[kirjastus=="hermann'i rmtkpl.",kirjastus:="k.a.hermann"]
+works[kirjastus=="pealadu hermanni kaupluses",kirjastus:="k.a.hermann"]
+works[kirjastus=="leoke'se kirjastus",kirjastus:="h.leoke"]
+works[kirjastus=="leoke",kirjastus:="h.leoke"]
+works[kirjastus=="leoke'se raamatuäri antikvariaat",kirjastus:="h.leoke"]
+works[str_detect(kirjastus,"h\\.leoke"),kirjastus:="h.leoke"]
+works[str_detect(kirjastus,"a\\.busch"),kirjastus:="a.busch"]
+works[str_detect(kirjastus,"jummala"),kirjastus:="jummala sanna wäljalautamisse söbbrad"]
+works[kirjastus=="eesti karskuseseltside kesktoimekond",kirjastus:="eesti karskusliit"]
+works[kirjastus=="eesti karskusseltside kesktoimkond",kirjastus:="eesti karskusliit"]
+works[kirjastus=="briti ja väljamaa piibliselts",kirjastus:="briti ja välismaa piibliselts"]
+works[kirjastus=="briti ja väljamaa piibliselts",kirjastus:="briti ja välismaa piibliselts"]
+works[kirjastus=="briti ja väljamaa piibliselts",kirjastus:="briti ja välismaa piibliselts"]
+works[kirjastus=="briti ja väljamaa piibliselts",kirjastus:="briti ja välismaa piibliselts"]
+works[kirjastus=="briti ja väljamaa piibliselts",kirjastus:="briti ja välismaa piibliselts"]
+works[str_detect(kirjastus,"Lindfors"),kirjastus:="Lindfors,"]
+works[str_detect(kirjastus,"\\["),kirjastus:=str_replace_all(kirjastus,"\\[","")]
+works[str_detect(kirjastus,"\\]"),kirjastus:=str_replace_all(kirjastus,"\\]","")]
+
+# the standardization was done with a focus on 1850-1930 and top 50 publishers
+# many remain unstandardized
+
+```
+
+
+
+```{r plot publishers, echo=F, warning=F, fig.height=4, fig.width=8}
+
+plotdata_kirjastus <- works[!is.na(kirjastus)&kirjastus!=""][,.N,by=kirjastus][order(N)][,kirjastus:=factor(kirjastus,levels=unique(kirjastus))][N>1000]
+plotdata_kirjastus %>%
+    ggplot(aes(y=N,x=kirjastus))+
+    geom_bar(stat="identity",position="dodge")+
+    geom_text(data=plotdata_kirjastus[(nrow(plotdata_kirjastus)-1):nrow(plotdata_kirjastus)], aes(label=N),size = 3, position = position_stack(vjust = 1.05))+
+    geom_text(data=plotdata_kirjastus[!(nrow(plotdata_kirjastus)-1):nrow(plotdata_kirjastus)],aes(label=N),size = 3, hjust = -0.5)+# )+
+    #coord_cartesian(ylim=c(0,2700))+
+    coord_flip()+
+    theme_bw()+
+    NULL
+
+```
+
+
+```{r topics, echo=F, warning=F,fig.height=8,fig.width=10}
+# The palette with grey:
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+# The palette with black:
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+morecolours <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
+
+
+topics <- works[,.(topic=unlist(str_split(keel,"\\$a"))),by=.(RRid,aeg,comptitle,keel)][keel!=""&topic!=""&!is.na(topic)|keel==""|is.na(keel)][order(aeg)][,genre:=trimws(str_replace_all(topic,"\\.",""))]
+
+topiclist <- topics[,.N,by=topic][order(-N)]
+topics[,decade:=floor(aeg/20)*20]
+
+topics_by_dec <- topics[,.N,by=.(decade,topic)][order(decade,-N)][!is.na(topic)&topic!=""]
+topics_by_dec_top <- topics_by_dec[,.SD[1:10],decade]
+topics_by_dec_top[,exists:=1][,rank1:=cumsum(exists),by=decade][,topic:=substr(topic,1,10)]
+topics_by_dec_top[decade<1801,period:="1600-1800"]
+topics_by_dec_top[decade>1799,period:="1800-2000"]
+
+
+
+library(ggrepel)
+topics_by_dec_top[decade>1599&decade<2020] %>%
+  ggplot(aes(x=decade,y=-rank1,label=topic,fill=topic))+
+  geom_tile()+
+  geom_text()+
+  guides(fill=FALSE)+
+  theme_bw()+
+  scale_fill_manual(values=c(cbPalette,morecolours,cbPalette,morecolours,cbPalette,morecolours,cbPalette,morecolours,cbPalette,morecolours))+
+  facet_wrap(~period,scales="free",ncol=1)
+
+```
+
+
+
+```{r preprocessing genres,results=F,eval=T, echo=F, warning=F}
+
+
+#works has only uniques
+genres <- works[,.(genre=unlist(str_split(genres,"\\$a"))),by=.(RRid,aeg,comptitle,genres,meta_eks2)][genres!=""&genre!=""&!is.na(genre)|genres==""|is.na(genres)][order(aeg)][,genre:=trimws(str_replace_all(genre,"\\.",""))]#[,.N,by=V1][order(-N)], excludes the one with zero genre
+
+genrelist <- genres[,.N,by=genre][order(-N)]
+nrow(genrelist) #unique genres
+
+
+#check for common topics with the help of genrelist
+#genres[str_detect(genre,"jutluse"),unique(genre)]
+
+genres[str_detect(genre,"vaimulik"),relig:="relig"]
+genres[str_detect(genre,"hardus"),relig:="relig"]
+genres[str_detect(genre,"katekism"),relig:="relig"]
+genres[str_detect(genre,"palve"),relig:="relig"]
+genres[str_detect(genre,"evange"),relig:="relig"]
+genres[str_detect(genre,"jutluse"),relig:="relig"]
+
+genres[str_detect(genre,"laul"),laul:="laul"]
+
+genres[str_detect(genre,"jutustus"),iluk:="iluk"]
+genres[str_detect(genre,"romaan"),iluk:="iluk"]
+genres[str_detect(genre,"^ilukirj"),iluk:="iluk"] #include vaimulik? not now
+genres[str_detect(genre,"novell"),iluk:="iluk"]
+genres[str_detect(genre,"jutud"),iluk:="iluk"]
+genres[str_detect(genre,"antoloogiad"),iluk:="iluk"]
+
+
+genres[str_detect(genre,"kalend"),kalend:="kalend"]
+
+
+genres[str_detect(genre,"kooli"),haridus:="haridus"]
+genres[str_detect(genre,"bukoolika"),haridus:=NA]
+genres[str_detect(genre,"aab"),haridus:="haridus"]
+genres[str_detect(genre,"õppe"),haridus:="haridus"]
+genres[str_detect(genre,"õpik"),haridus:="haridus"]
+genres[str_detect(genre,"töövih"),haridus:="haridus"]
+genres[str_detect(genre,"õppekav"),haridus:="haridus"]
+genres[str_detect(genre,"ülesanded"),haridus:="haridus"]
+genres[str_detect(genre,"lugemikud"),haridus:="haridus"]
+genres[str_detect(genre,"loeng"),haridus:="haridus"]
+genres[str_detect(genre,"kontrolltööd"),haridus:="haridus"]
+
+
+
+genres[str_detect(genre,"käsiraa"),juhend:="juhend"]
+genres[str_detect(genre,"juhen"),juhend:="juhend"]
+genres[str_detect(genre,"nõuand"),juhend:="juhend"]
+
+genres[str_detect(genre,"luule"),luule:="luule"]
+genres[str_detect(genre,"bukoolika"),luule:="luule"]
+
+genres[str_detect(genre,"kodukor"),bürokr:="bürokr"]
+genres[str_detect(genre,"põhikir"),bürokr:="bürokr"]
+genres[str_detect(genre,"seltsid$"),bürokr:="bürokr"]
+genres[str_detect(genre,"eeskirjad"),bürokr:="bürokr"]
+genres[str_detect(genre,"üleskutsed"),bürokr:="bürokr"]
+genres[str_detect(genre,"seadus"),bürokr:="bürokr"]
+genres[str_detect(genre,"õigus"),bürokr:="bürokr"]
+genres[str_detect(genre,"aruanded"),bürokr:="bürokr"]
+genres[str_detect(genre,"stenogrammid"),bürokr:="bürokr"]
+genres[str_detect(genre,"otsused"),bürokr:="bürokr"]
+#genres[str_detect(genre,"poliit"),unique(genre)]
+
+
+genres[str_detect(genre,"mäng"),mäng:="mäng"]
+
+genres[str_detect(genre,"tants"),tants:="tants"]
+
+genres[str_detect(genre,"laste"),lastenoorte:="lastenoorte"]
+genres[str_detect(genre,"pildi"),lastenoorte:="lastenoorte"]
+genres[str_detect(genre,"värvi"),lastenoorte:="lastenoorte"]
+genres[str_detect(genre,"noorsoo"),lastenoorte:="lastenoorte"]
+
+genres[str_detect(genre,"näide"),näidend:="näidend"]
+
+genres[str_detect(genre,"biogra"),biogr:="biogr"]
+
+genres[str_detect(genre,"reisikirj"),reis:="reis"]
+genres[str_detect(genre,"reisi"),reis:="reis"]
+
+genres[str_detect(genre,"teatm"),teatm:="teatm"]
+genres[str_detect(genre,"aimekirj"),teatm:="teatm"]
+genres[str_detect(genre,"nimest"),teatm:="teatm"]
+genres[str_detect(genre,"biblio"),teatm:="teatm"]
+
+
+#genres[str_detect(genre,"loogia"),unique(genre)]
+genres[str_detect(genre,"teadus"),teadus:="teadus"]
+genres[str_detect(genre,"labori"),teadus:="teadus"]
+genres[str_detect(genre,"tees"),teadus:="teadus"]
+genres[str_detect(genre,"kogumikud"),teadus:="teadus"]
+genres[str_detect(genre,"separaa"),teadus:="teadus"]
+
+genres[str_detect(genre,"kataloog"),kataloog:="kataloog"]
+
+genres[str_detect(genre,"kokaraamatud"),toit:="toit"]
+genres[str_detect(genre,"toid"),toit:="toit"]
+
+genres[,genre_standardized:=str_replace_all(paste(relig,laul,iluk,kalend,haridus,juhend,luule,bürokr,mäng,tants,lastenoorte,näidend,biogr,reis,teatm,teadus,kataloog,toit,sep=" "),"NA","")]
+
+genres[,decade:=floor(aeg/10)*10]
+genres[,decade2:=(floor(aeg/20)*20)+10]#+10 to center for the plot
+genres_st <-genres[,.(genres_all=paste(genre_standardized,sep=" ",collapse= " ")),by=.(RRid,aeg,decade,decade2,comptitle,genres,meta_eks2)]
+genres_st[,genres_all:=paste(unique(unlist(str_split(trimws(genres_all)," "))),sep="",collapse= " "),by=.(RRid,aeg,decade,comptitle,genres,meta_eks2)]
+#genres_st[101,trimws(genres_all)]
+genres_melt <-  genres_st[,.(genre_uniques=unlist(str_split(genres_all, " "))), by=.(RRid,aeg,decade,decade2,comptitle,genres,meta_eks2)]
+#hacky
+genres_melt[,n_genres:=.N,by=.(RRid,aeg,decade,comptitle,genres,meta_eks2)]
+genres_melt <- genres_melt[!(n_genres>1&genre_uniques=="")][order(aeg)]
+genres_melt[,n_genres:=.N,by=.(RRid,aeg,decade,comptitle,genres,meta_eks2)]
+
+
+
+#should check this against the corpus too...
+#print numbers of each of the genres matter for dominance of linguistic parameters...
+
+genres_melt[,totalsum:=.N,genre_uniques]
+#genres_melt[order(-totalsum),genre_uniques:=factor(genre_uniques,levels=unique(genre_uniques))]
+#fwrite(genres_melt,"data/ERB_genres_processed_v_29.07.2018.tsv",sep="\t")
+
+```
+
+```{r plot genres,eval=T, echo=F, warning=F, fig.height=4, fig.width=8}
+
+
+
+genre_by_time <- genres_melt[,.N,by=.(totalsum,decade2,genre_uniques)][,prop:=N/sum(N),by=.(decade2)][order(-totalsum)][,genre_uniques:=factor(genre_uniques,levels=unique(genre_uniques))]
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+morecolours <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
+
+
+grid_expanded <- expand.grid(x=unique(genre_by_time[!is.na(decade2)&decade2!="20162000"]$decade2),y=unique(genre_by_time[!is.na(decade2)]$genre_uniques))
+names(grid_expanded) <- c("decade2","genre_uniques")
+merged <-unique(merge(genre_by_time,grid_expanded,by=c("decade2","genre_uniques"),all=T))
+merged[is.na(prop),prop:=0]
+genre_by_time <- merged
+
+
+genre_by_time[decade2>1700&decade2<2000] %>%
+  ggplot(aes(x=decade2,fill=genre_uniques,y=prop))+
+  geom_area(position='stack')+# theme_classic()+
+  theme_bw()+
+  scale_fill_manual(values=c(cbbPalette,morecolours,cbbPalette))+
+  theme(legend.key.size = unit(0.5, "cm"))
+
+#fwrite(works,"data/ERB_works_processed_v_29.07.2018.tsv",sep="\t")
+
+
+```
+
