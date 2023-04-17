@@ -6,7 +6,7 @@ Compiled by Peeter Tinits, 2018-2023 (CC-BY-4.0).
 
 Tidy ENB adapts, harmonizes and enriches the data in Estonian National Bibliography to support analyses of its data. It has converted the marc21 file into a custom wide data file that includes the key information per publication with one book per row. The names of the publishers, the associated placenames have been harmonized and the genres of the publications have been standardized with a focus on the period 1800-1940. The information on authors associated with the publications has been enriched with the data available from the German National Bibliography and Wikidata via the VIAF links in the system.
 
-## Data
+## Sources
 
 The dataset relies on the data files provided by the National Library of Estonia 1) [Estonian books](https://data.digar.ee/erb/ERB_eestikeelne_raamat.zip), 2) [Books in other languages](https://data.digar.ee/erb/ERB_muukeelne_raamat.zip) as well as [Persons in ENB](https://data.digar.ee/erb/person.zip). They are complemented with information from VIAF, German National Bibliography, Wikidata and GEONAMES. 
 
@@ -17,6 +17,16 @@ The processing scripts are given in the code folder. The processing also relies 
 ## Geo-coding
 
 Individuals have been associated with their location of birth based on the associated metadata in linked databases and placename information. In adding geotags, the data from Wikidata geolocations was preferred, followed by the locations given in DNB, followed by the placenames given in DNB that were combined with GEONAMES data. For publisher locations, geotags were added from GEONAMES data based on the harmonized locations. The automatic geo-tagging can be mistaken and the results are hoped to be improved in the future.
+
+## Data
+
+The data files are given in the data folder. People provides the metadata on the individuals included in the bibliography, works provides the metadata on each of the publications. Geotagged files include a geotag layer on top of this information.
+
+- data/ENB_people.tsv.zip
+- data/ENB_people_geotagged.tsv.zip
+- data/ENB_works.tsv.zip
+- data/ENB_works_geotagged.tsv.zip
+
 
 ## Reports
 
