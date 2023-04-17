@@ -1,0 +1,206 @@
+---
+title: "ENB enrichment"
+output:
+  html_document:
+    fig_caption: yes
+    df_print: paged
+    code_folding: hide
+ # bookdown::html_document2: default
+  pdf_document:
+    latex_engine: xelatex
+    fig_caption: true
+editor_options:
+  chunk_output_type: console
+delete_merged_file: true
+---
+
+
+```{r setup2, warning=FALSE,results='hide', echo=F,include=F}
+library(here)
+source(here("code/0_functions/0_libraries.R"))
+```
+
+
+
+
+```{r build author metadata}
+## 1) Read ENB dataset
+
+
+person_ids <- fread(here("data/raw/linking_data/person_ids.tsv"))
+person_ids[,Name:=str_replace(Name,"\\.$","")]
+person_ids[,Name:=str_replace(Name,"\\,$","")]
+person_ids[,Name:=str_replace(Name,"\\;$","")]
+person_ids[,RRpid2:=first(RRpid),Name]
+
+person_ids2 <- person_ids[,.(RR_mastername=Name[1],RR_all_names=paste0(Name,collapse=" && ")),.(RRpid2)]
+#df <- merge(person_ids,person_ids[str_detect(Name,"pseud")],by="RRpid")[Name.x!=Name.y]
+
+
+
+# 2) Read the downloaded DNB dataset - people linked to Estonia
+
+total_dnb_relevant <- fread(here("data/raw/linking_data/total_dnb_relevant.tsv"))
+
+# 3) Read wikidata info
+wikidata_names <- fread(here("data/raw/linking_data/wdata_persons_all_mininfo_order_dbirth.tsv"),quote="")
+wikidata_names[,WDid:=str_replace(person,"http://www.wikidata.org/entity/","WKP|")]
+wikidata_names_uniques <- unique(wikidata_names[,-c("viaf_id","gnd_id")])[,.SD[1],by = WDid]
+wikidata_names_uniques[,.N,WDid][N>1]
+
+# 4) Read all links data
+local_linkset <- fread(here("data/raw/linking_data/linked_data_all.tsv"),sep="\t")
+local_linkset[WDid=="",WDid:=NA]
+local_linkset[viaf=="",viaf:=NA]
+local_linkset[dnb_link=="",dnb_link:=NA]
+local_linkset[errr_id=="",errr_id:=NA]
+
+people <- merge(local_linkset,person_ids2,by.x="errr_id",by.y="RRpid2",all.x=T)
+people <- merge(people,total_dnb_relevant,by.x="dnb_link",by.y="dnb_id",all.x=T)
+people <- merge(people,wikidata_names_uniques,by.x="WDid",by.y="WDid",all.x=T)
+people[,.N,WDid][N>1]
+
+
+people[,name_simple:=str_extract(RR_mastername,"\\$a[^\\$]+")]
+people[,date_simple:=str_extract(RR_mastername,"\\$d[^\\$]+")]
+people[,name_simple:=str_remove(name_simple,"^\\$a")]
+people[,name_simple:=str_remove(name_simple,"[.,;]$")]
+people[,name_simple:=trimws(name_simple)]
+
+people[,date_simple:=str_remove(date_simple,"^\\$d")]
+
+#pseudonyms from dnb
+pseudonyms <- people[!is.na(name),.(name=unlist(str_split(name,"\" ;\"\"~\""))),by=.(viaf, RR_mastername)]
+#should give 840k pseudonyms, make sure it works
+pseudonyms[,name:=str_remove_all(name,"\"")]
+pseudonyms[,name:=str_remove(name,";$")]
+pseudonyms[,name:=trimws(name)]
+pseudonyms_together <- pseudonyms[,.(dnb_all_names=paste0(name,collapse=" && ")),.(viaf,RR_mastername)]
+
+people <- merge(people[,-c("name")],pseudonyms_together,by=c("viaf","RR_mastername"),all.x=T)
+duplicates_because_of_RRids <- people2[duplicated(viaf)&!is.na(viaf)]
+
+fwrite(people,here("data/publish/tidy_ENB/data/ENB_people.tsv"))
+```
+
+
+
+
+```{r add geoinfo1}
+dnb_geoinfo <- fread(here("data/raw/linking_data/dnb_geo_v4.ttl.tsv"),sep="\t",header=F,blank.lines.skip = T,quote="")
+dnb_geoinfo[V1=="",V1:=NA]
+dnb_geoinfo <- na.locf(dnb_geoinfo)
+#gndo:preferredNameForThePlaceOrGeographicName
+#variantNameForThePlaceOrGeographicName
+#333 bplaces (unique places not people)
+
+#actually should compare with ISIK data on this in fact...
+ee_places <- fread(here("data/raw/geo_data/EE.txt"))
+ee_towns <- ee_places[V7=="P"]
+ee_towns[duplicated(V4)] #7k names, 1.5k duplicated
+lv_places <- fread(here("data/raw/geo_data/LV.txt"))
+lv_towns <- lv_places[V7=="P"]
+lv_towns[duplicated(V4)] #7k names, 1.5k duplicated
+fi_places <- fread(here("data/raw/geo_data/FI.txt"))
+fi_towns <- fi_places[V7=="P"]
+fi_towns[duplicated(V4)] #7k names, 1.5k duplicated
+ru_places <- fread(here("data/raw/geo_data/RU.txt"),quote="")
+ru_towns <- ru_places[V7=="P"]
+ru_towns[duplicated(V4)] #7k names, 1.5k duplicated
+de_places <- fread(here("data/raw/geo_data/DE.txt"),quote="")
+de_towns <- de_places[V7=="P"]
+de_towns[duplicated(V4)] #7k names, 1.5k duplicated
+all_towns <- rbind(ee_towns,lv_towns,fi_towns,ru_towns,de_towns)
+all_places <- rbind(ee_places,lv_places,fi_places,ru_places,de_places)
+
+all_places2 <- all_places[,.(V2=unlist(str_split(V4,","))),.(V5,V6)]
+all_places2 <- all_places2[V2!=""]
+
+all_places_all <- rbind(all_places[,.(V2,V5,V6)],all_places2)
+
+people[,bplace:=str_replace(bplace," ;","")]
+people[,bplace:=str_remove_all(bplace,"\"")]
+
+#number of unique places here, not people
+gnd_relevant <- merge(unique(people[str_detect(bplace,"gnd"),.(bplace)]),dnb_geoinfo,by.x="bplace",by.y="V1")
+gnd_relevant[str_detect(V2,"hasGeo")] #hasgeo is same as geonames link sameas so all good, almost same
+
+
+locations <- gnd_relevant[str_detect(V3,"geonames")]
+names1 <- gnd_relevant[str_detect(V2,"preferredName")] #all have preferredname
+names2 <- gnd_relevant[str_detect(V2,"variantName")]
+gnd_relevant[,uniqueN(bplace)] #only 330 total anyway
+
+joined <- merge(merge(locations[,.(bplace,placeid=V3)],names1[,.(bplace,prefname=V3)],by="bplace",all=T),names2[,.(bplace,varnames=V3)],by="bplace",all=T)
+joined[,geo_id:=as.numeric(str_extract(placeid,"[0-9]+"))]
+
+
+
+#HAS COORDS HERE
+#118 clean merges through dnb ids, includes mb 40 of them in est.
+mergedplaces <- merge(all_towns,joined,by.x="V1",by.y="geo_id")
+#but care about the est ones really only...
+#placenames database could be best still too...
+
+#ALSO HAS COORDS HERE
+linked_via_names <- 
+merge(unique(people[,.(bplace)]),all_towns,by.x="bplace",by.y="V2")
+
+#+103 places
+linked_via_names[,uniqueN(bplace)]
+#for 125 people
+#linked_via_names[,uniqueN(coauthor)] #no longer has coauthor in table
+#some have multiple matches
+
+
+bothmethods <- rbind(mergedplaces,linked_via_names,fill=T)
+
+w_dnb_data_locs =merge(people,bothmethods[!duplicated(bplace)],by="bplace",all.x=T)
+
+#locbirth, V5 ja V6
+
+
+#WIKIDATA BPLACE COORDS HERE, w coords
+unique(people[!is.na(locbirth)&locbirth!="",.(name,locbirth)]) #804 authors have some birthlace info, but includes classics...
+
+#1049 nime kõik koos
+unique(w_dnb_data_locs[(!is.na(locbirth)&locbirth!="")|V5!="NA",.(name,locbirth,V5)])
+unique(w_dnb_data_locs[V5!="NA",.(name,locbirth,V5)])
+
+people[,uniqueN(pbirthLabel)] #w 444 labels, so all places have also coords
+
+options(device="RStudioGD")
+w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)][,uniqueN(name),.(birthyear=floor(as.numeric(str_extract(date_simple,"[0-9]{4}"))/10)*10)][birthyear>1800] %>% 
+ ggplot(aes(x=birthyear,y=V1))+
+ geom_point()
+
+w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)][,uniqueN(name),.(birthyear=as.numeric(str_extract(date_simple,"[0-9]{4}")))][birthyear>1800][,sum(V1)]
+
+w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)][,uniqueN(name)]
+w_dnb_data_locs[!is.na(V5)][,uniqueN(name)]
+
+w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)]
+
+
+
+
+
+
+w_dnb_data_locs[!is.na(locbirth)&locbirth!="",lon9:=as.numeric(trimws(str_extract(locbirth,"[0-9\\.]+ ")))]
+
+w_dnb_data_locs[!is.na(locbirth)&locbirth!="",lat9:=as.numeric(trimws(str_extract(locbirth," [0-9\\.]+")))]
+
+#prefer wikidata to dnb
+w_dnb_data_locs[is.na(lon9),lon9:=V5]
+w_dnb_data_locs[is.na(lon9),lat9:=V6]
+
+
+fwrite(w_dnb_data_locs,here("data/publish/tidy_ENB/data/ENB_people_geotagged.tsv"))
+
+# 
+# fwrite(w_dnb_data_locs,here("data/publish/tidy_ENB/data/ENB_people_geotagged_minimal.tsv"))
+
+```
+
+
+

@@ -1,0 +1,233 @@
+---
+title: "Metadata from ENB"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+    self_contained: no
+---
+
+# Build dataset
+
+Last data file 04-01-2022
+Last updated processing 27-01-2022
+
+marc2tidy made into a separate function.
+
+
+## Nullist ehitada on vist parem.
+
+- Kasuta K&K koodi siin....
+
+1) marc2tidy in this file.
+2) add_languages. run separate file (has notes in it.)
+3) harmonize data and save this.
+
+- final output has columns for harmonized data.
+- and columns for languages too. done for non-eesti data.
+
+
+```{r}
+library(here)
+source(here("code/0_functions/0_libraries.R"))
+#source(here("code/0_functions/ENB_package/R/marc2tidy_function.R"))
+#source(here("code/0_functions/ENB_package/R/harmonize_genres.R"))
+#remotes::install_github("peeter-t2/harmonize_ENB")
+
+library(ENBtools)
+```
+
+
+```{r}
+# Instructions to convert from marc21xml to tsv.
+
+# Written 20.07.2018 - when downloading updated version of ENB- they have e.g. updated a few titles from V to W -> see example https://erb.nlib.ee/?marc=15213250, in old version had just 245 as Viletsusest viletsusse, now 245 is with W and old title is moved to 246
+
+# 1) download the data dump file (it is in marc21.xml)
+# 2) use marcedit 7 (6 can work too), run MARC tools, and convert from xml to mrc
+
+# To run MarcEdit on linux, run 
+# mono MarcEdit.exe in the folder
+
+# While converting xml to mrc, use utf-8 encoding just in case.
+
+# 3) can also convert mrc to json, but not necessary,
+
+# then marcedit tools will offer
+# Openrefine Data Transfer Tool
+
+# give the mrc as source file
+# and tsv as save file (dropdown menu below,
+# use export to openrefine and run,
+# this should give a wellformed tsv file from xml stored marc file.
+
+# each operation will take some a few minutes, but it will show progress while doing it....
+# MarcEdit 6 had some problems in crashing when converting to tsv i think, but MarcEdit 7 does this quite fine.
+# The resulting tsv will have one too many tabs in the first row, which can simply be edited out in notepad++
+
+
+```
+
+
+
+
+```{r marc2tidy simple, warning=F, eval=T}
+
+#uses a function now for this conversion.
+
+file3 <- fread(here("data/raw/ENB_data/ENB_eestikeelne_raamat_04_01_2022.tsv"),select=1:4,sep="\t")
+works1 <- marc2tidy(file3)
+rm(file3)
+
+fwrite(works1,here("data/processed/ENB_works_est_v_04_01_2022.tsv"),sep="\t")
+
+works1[,aeg:=as.numeric(aeg)]
+works1[,set:="eesti"]
+works1 <- works1[order(aeg)]
+
+file3 <- fread(here("data/raw/ENB_data/ENB_muukeelne_raamat_04_01_2022.tsv"),select=1:4,sep="\t")
+works2 <- marc2tidy(file3)
+rm(file3)
+
+fwrite(works2,here("data/processed/ENB_works_other_v_04_01_2022.tsv"),sep="\t")
+
+works2[,aeg:=as.numeric(aeg)]
+works2[,set:="muukeelne"]
+works2 <- works2[order(aeg)]
+
+works <- rbind(works1,works2,fill=T)
+
+
+#add autor2 - Estonian language author, 1) translator if it exists or 2) first editor or compiler if there is noone as main author
+works[teised_autorid!="",teised_autorid:=paste0(teised_autorid," $a")]
+#for translator does not check if author already exists. if translator is given, then its a translation, and we want to know about the estonian translation.
+works[str_detect(teised_autorid,"tõlkija"),autor2:=str_subset(unlist(str_extract_all(teised_autorid,"\\$a.+?(?=\\$a)")),"tõlkija")[1],by=teised_autorid]
+#see <-works[str_detect(teised_autorid,"tõlkija")]
+works[autor_id==""&teised_autorid!=""&is.na(autor2)&str_detect(teised_autorid,"koostaja"),autor2:=str_subset(unlist(str_extract_all(teised_autorid,"\\$a.+?(?=\\$a)")),"koostaja")[1],by=teised_autorid]
+works[autor_id==""&teised_autorid!=""&is.na(autor2)&str_detect(teised_autorid,"toimetaja"),autor2:=str_subset(unlist(str_extract_all(teised_autorid,"\\$a.+?(?=\\$a)")),"toimetaja")[1],by=teised_autorid]
+works[teised_autorid!="",teised_autorid:=str_remove(teised_autorid," \\$a$")]
+works[is.na(autor2),autor2:=autor_id]
+works[,autor2:=str_replace(autor2,",\\$e.+","")]
+works[,autor2:=str_replace(autor2,"\\$e.+","")]
+works[,autor2:=str_replace(autor2,"\\.$","")]
+works[,autor2_name:=str_extract(autor2,"\\$a[^\\$]+")]
+works[,autor2_dates:=str_extract(autor2,"\\$d[^\\$]+")]
+
+
+#there are 15 works with dates out of range at the moment. for now, simply change their date to NA.
+nrow(works[aeg<1500|aeg>2021,.(c,aeg,RRid,substr(title,1,50))])
+works[aeg<1500|aeg>2021,aeg:=NA]
+#additionally, there are 675 works where the workflow failed to produce a number. ignore their dates for now too.
+nrow(works[is.na(aeg),.(c,aeg,RRid,substr(title,1,50))])
+
+works[,exists:=1]
+works[,reprint_nr:=cumsum(exists),by=.(autor_id,comptitle)]
+works[,exists:=NULL]
+
+fwrite(works,here("data/processed/ENB_works_both_v_04_01_2022.tsv"),sep="\t")
+
+
+```
+
+
+```{r harmonization code}
+
+works <- fread(here("data/processed/ENB_works_both_v_04_01_2022.tsv"),sep="\t")
+#### harmonize publishers
+works <- harmonize_publishers(works) #keeps the original in kirjastus_orig, also creates variable for first year publisher was present
+
+#### harmonize publisher locations
+
+works <- harmonize_places(works) #keeps the original in koht_orig
+works[str_detect(koht,"New York"),koht:="New York City"]
+
+```
+
+
+```{r add language}
+
+works[set=="eesti",langauto4:="estonian"]
+works[set=="muukeelne",langauto:=cld2::detect_language(comptitle)]
+
+library(textcat)
+myprofiles=TC_byte_profiles[names(TC_byte_profiles) %in% c("latin","german","english","estonian","swedish","russian","danish","greek-iso8859-7","latvian","polish","russian-iso8859_5","russian-koi8_r","russian-windows1251")]
+#works2[aeg<1940,langauto4:=textcat(comptitle, p = myprofiles)]
+works[set=="muukeelne",langauto4:=textcat(comptitle, p = myprofiles)]
+#works2[2,langauto3:=franc::franc(comptitle,min_speakers=0)]
+works[set=="muukeelne"&str_detect(langauto4,"russian"),langauto4:="russian"]
+works[,.N,langauto4]
+# if no result from more accurate textcat, then use cld2
+works[is.na(langauto4),langauto4:=langauto]
+nas <- works[is.na(langauto4)]
+
+fwrite(works,here("data/processed/ENB_works_v2.tsv"),sep="\t")
+
+
+```
+
+
+
+```{r}
+### harmonize genres
+
+#make harmonize genres return the same kind of object. one genre per line.
+genres <- works[,.(genre=unlist(str_split(genres,"\\$a"))),by=.(RRid,aeg,koht,kirjastus,autor_id,comptitle,meta_eks2,genres,set)][genres!=""&genre!=""&!is.na(genre)|genres==""|is.na(genres)][,genre:=trimws(str_replace_all(genre,"\\.",""))]
+genres[,genre_count:=.N,by=RRid]
+
+genrelist <- genres[,.N,by=genre][order(-N)]
+genres <- harmonize_genres(genres,"ENG")
+#uncategorized ones
+
+genres[genre_count==1&genre_standardized==""&genre!="",genre_standardized:="OTHER"]
+genres[aeg>1799&aeg<1940][genre_standardized=="OTHER"][,.N,genre][order(-N)][1:50]
+
+genres <- genres[!(genre_count>1&genre_standardized=="")] #remove50k then
+genres[genre_standardized=="",genre_standardized:="NONE"]
+genres[aeg>1799&aeg<1940][genre_standardized=="NONE"]
+
+genres[,totalsum:=.N,genre_standardized]
+genres[,decade:=floor(aeg/10)*10]
+genres[,decade2:=(floor(aeg/20)*20)+10]#+10 to center for the plot
+
+genres2 <- genres[,.(genre_standardized=unlist(str_split(genre_standardized," "))),by=.(koht,kirjastus,autor_id,comptitle,meta_eks2,RRid,aeg,genres,set)]
+genres3 <- genres2[,.(genre_standardized=paste0(genre_standardized,collapse=", ")),by=.(RRid,aeg,koht,kirjastus,autor_id,comptitle,meta_eks2,genres,set)]
+works_g <- works[genres3[,.(RRid,genre_standardized)],on="RRid"] #w genre standardized..
+
+
+#fwrite(works_g,here("data/processed/ENB_works_w_genre.tsv"),sep="\t")
+
+#test genre
+#genres[decade<1940&genre_standardized=="youth drama"]
+
+fwrite(genres,here("data/processed/ENB_works_genre_per_row_v2.tsv"),sep="\t")
+fwrite(works_g,here("data/processed/ENB_works_v2.tsv"),sep="\t")
+fwrite(works_g,here("data/publish/tidy_ENB/data/ENB_works.tsv"),sep="\t")
+
+```
+
+
+```{r}
+cities <- fread(here("data/raw/geo_data/cities500.txt"))
+anti_merge_cities <- anti_join(works,cities,by=c("koht"="V2"))
+missing <- data.table(anti_merge_cities)[,.N,koht][order(-N)]
+try <- cities[,unlist(str_split(V4,",")),by=V2]
+missing_found <- merge(missing,try,by.x="koht",by.y="V1")
+missing_found[,nn:=.N,koht]
+works <- merge(works,missing_found[nn==1][,.(koht,koht_alt=V2)],by="koht",all.x=T)[!is.na(koht_alt),koht:=koht_alt][,koht_alt:=NULL]
+
+anti_merge_cities <- anti_join(works,cities,by=c("koht"="V2"))
+missing <- data.table(anti_merge_cities)[,.N,koht][order(-N)]
+
+#take largest city for every name
+cities[,cities_with_name:=.N,V2]
+cities[V9=="EE"&cities_with_name>1][order(V2)]
+largest_cities_for_each_name <- cities[V9=="EE"&cities_with_name>1,V15:=10000*V15][order(-V15),.SD[1],V2][V9=="EE"&cities_with_name>1,V15:=V15/10000]
+
+works_cities <- merge(works,largest_cities_for_each_name[,.(V2,V5,V6,V15,V18)],by.x="koht",by.y="V2",all.x=T)
+
+fwrite(works_cities,here("data/publish/tidy_ENB/data/ENB_works_geotagged.tsv"),sep="\t")
+
+
+
+```
