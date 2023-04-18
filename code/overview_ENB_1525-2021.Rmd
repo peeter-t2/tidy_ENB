@@ -1,11 +1,11 @@
 ---
 title: "Metadata from ENB"
 output:
-  pdf_document:
-    latex_engine: xelatex
   html_document:
     df_print: paged
     self_contained: yes
+  pdf_document:
+    latex_engine: xelatex
 editor_options:
   chunk_output_type: console
 ---
@@ -15,7 +15,7 @@ editor_options:
 
 ### Abstract
 
-Estonian National Bibliography is a metadata set that aims to collect information on all publications written in any language in Estonia and all texts written in Estonian in whichever country. In this set, only the publications in Estonian language are used. The dataset has been compiled in digital format since 2002 and aggregates the work of multiple institutions and generations in collecting the publication information.
+Estonian National Bibliography is a metadata set that aims to collect information on all publications written in any language in Estonia and all texts written in Estonian in whichever country. The dataset has been compiled in digital format since 2002 and aggregates the work of multiple institutions and generations in collecting the publication information.
 
 The data here has been extracted on Jan 27 2022.
 
@@ -40,23 +40,32 @@ Information on coding the variables can be found here: [meta file on github]
 
 Helpful information on the metadata available can be found here: http://data.digar.ee/#page5
 
-The rules followed in adding information on older books can be found here: http://www.elnet.ee/images/pdf/juhendid/vanaraamat_MARC21.pdf
+The rules followed in adding information on older books can be found here: https://www.elnet.ee/wiki/lib/exe/fetch.php?media=kataloogimine:vanaraamatmarc_2019.pdf
 
 
 ## Intro
 
 The current code organizes the ENB metadata into a [tidy](https://cran.r-project.org/web/packages/tidyr/vignettes/tidy-data.html) format: with one publication per line, and with the basic metadata information distributed into few relevant categories. This has been done to facilitate further data analytic steps, particularly when someone may be unfamiliar with Marc21 database structures.
 
+```{r setup,echo=F}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
 
 ```{r setup2, echo=F, warning=F,results='hide', include=FALSE}
 library(here)
-source(here("code/0_functions/0_libraries.R"))
+library(data.table)
+library(tidyverse)
+library(plotly)
+library(naniar)
 options(scipen=99999)
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+morecolours <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
 
 library("rnaturalearth")
-library("rnaturalearthdata")
+#library("rnaturalearthdata")
 library(sf)
-library(rgeos)
+#library(rgeos)
 #install.packages(c("cowplot", "googleway", "ggplot2", "ggrepel", 
 #"ggspatial", "libwgeom", "sf", "rnaturalearth", "rnaturalearthdata"))
 ```
@@ -65,7 +74,7 @@ library(rgeos)
 ## Summary
 
 ```{r read the metadata from file for speed, echo=F, warning=F}
-works <- fread(here("data/publish/tidy_ENB/data/ENB_works.tsv"),sep="\t")
+works <- fread(cmd="unzip -p data/ENB_works.tsv.zip",sep="\t")
 works_et <- works[set=="eesti"]
 
 
@@ -98,9 +107,10 @@ works[aeg< 2020&aeg>1800] %>%
 ```
 
 
+## Coverage of metainformation
 
 
-```{r coverage of metainformation, echo=F, warning=F, fig.height=8, fig.width=16, eval =F}
+```{r coverage of metainformation, echo=F, warning=F, fig.height=8, fig.width=16, eval =T}
 
 #vis_miss(as.tibble(works[,.(RRid,aeg,koht,kirjastus,autor_id,comptitle,meta_eks2,keel,genres, links)]),cluster=T,sort_miss=F,warn_large_data = F)
 
@@ -155,6 +165,17 @@ vis_pal_cb_safe <- c('#d73027', # red
                          '#91bfdb', # mid blue
                          '#4575b4') # dark blue
 
+variables_overview <-data.table(gathered)[,.N,.(valueType,variable)][,sum:=sum(N),variable][valueType=="!NA"][,prop:=round(N/sum,2)*100,variable]
+variables_overview
+
+```
+
+
+An overview of the coverage of the data is given below. Grey areas indicate datapoints that do have the information of that column, black areas the datapoints that do not have the information of that column. For example `r variables_overview[variable=="kirjastus",prop]`% of the books have information on the publisher, however just `r variables_overview[variable=="autor_id",prop]`% of the books have information on the author. `r variables_overview[variable=="links",prop]`% of the books have a link to an online digital copy.
+
+
+```{r, echo=F, warning=F, fig.height=8, fig.width=16}
+
 gathered_DT %>%
   ggplot()+
   geom_tile(aes(x=variable,y=rows,fill=valueType))+
@@ -187,9 +208,7 @@ ggplot2::scale_x_discrete(position = "top")
     # get the values here so plotly can make them visible
     #dplyr::mutate(value = vis_extract_value_(x))
 
-
 ```
-
 
 
 ### Cities
@@ -271,7 +290,7 @@ plotdata_autorid %>%
     #coord_cartesian(ylim=c(0,2700))+
     coord_flip()+
     theme_bw()+
-    labs(x="",y="",title="Most common authors among the publiations not in Estonian")+
+    labs(x="",y="",title="Most common authors among the publications not in Estonian")+
     NULL
 
 
@@ -281,7 +300,7 @@ plotdata_autorid %>%
 
 ### Publishers
 
-Publisher names have also been harmonized manually and algorithmically with the more frequent names in focus.
+Publisher names have also been harmonized manually and algorithmically with more frequent names in focus. 
 
 ```{r plot publishers, echo=F, warning=F, fig.height=4, fig.width=8}
 
@@ -349,46 +368,51 @@ topics_by_dec_top[decade>1599&decade<2020] %>%
 The bibliography also includes genre markers on many works. Some works have no markers, many have several. Here, we have built a few larger categories based on the dataset and visualized their frequencies over time. NONE means that the works did not have any genre markers.
 
 ```{r plot genres,eval=T, echo=F, warning=F, fig.height=4, fig.width=8}
-genres <- fread(here("data/processed/ENB_works_genre_per_row_v2.tsv"),sep="\t")
-genres_st <-genres[,.(genres_all=paste(genre_standardized,sep=" ",collapse= " ")),by=.(RRid,aeg,decade,decade2,comptitle,genres,meta_eks2)]
-genres_st[,genres_all:=paste(unique(unlist(str_split(trimws(genres_all)," "))),sep="",collapse= " "),by=.(RRid,aeg,decade,comptitle,genres,meta_eks2)]
+genres <- works[,.(genre=unlist(str_split(genre_standardized,","))),by=.(RRid,aeg,koht,kirjastus,autor_id,comptitle,meta_eks2,genres,genre_standardized,set)][,genre:=trimws(str_replace_all(genre,"\\.",""))]#[genres!=""&genre!=""&!is.na(genre)|genres==""|is.na(genres)][,genre:=trimws(str_replace_all(genre,"\\.",""))]
+#genres[genre==""]
+genres[genre=="dances",genre:="OTHER"]
+#genres_st <-genres[,.(genres_all=paste(genre_standardized,sep=" ",collapse= " ")),by=.(RRid,aeg,decade,decade2,comptitle,genres,meta_eks2)]
+#genres_st[,genres_all:=paste(unique(unlist(str_split(trimws(genres_all)," "))),sep="",collapse= " "),by=.(RRid,aeg,decade,comptitle,genres,meta_eks2)]
 #genres_st[101,trimws(genres_all)]
-genres_melt <-  genres_st[,.(genre_uniques=unlist(str_split(genres_all, " "))), by=.(RRid,aeg,decade,decade2,comptitle,genres,meta_eks2)]
+#genres_melt <-  genres_st[,.(genre=unlist(str_split(genres_all, " "))), by=.(RRid,aeg,decade,decade2,comptitle,genres,meta_eks2)]
 #hacky
-genres_melt[,n_genres:=.N,by=.(RRid,aeg,decade,comptitle,genres,meta_eks2)]
-genres_melt <- genres_melt[!(n_genres>1&genre_uniques=="")][order(aeg)]
-genres_melt[,n_genres:=.N,by=.(RRid,aeg,decade,comptitle,genres,meta_eks2)]
-genres_melt[,totalsum:=.N,genre_uniques]
+genres[,genres_in_pub:=.N,by=.(RRid,genre)]
+#genres <- genres[!(n_genres>1&genre=="")][order(aeg)]
+#genres[,n_genres:=.N,by=.(RRid,aeg,decade,comptitle,genres,meta_eks2)]
+genres[,genre_in_data:=.N,genre]
+genres[,decade:=floor(aeg/10)*10]
+genres[,decade2:=(floor(aeg/20)*20)+10]#+10 to center for the plot
+
 
 #genres_melt[decade2>1500&decade2<1830] %>%  View()
-#genres_melt[aeg>1799&aeg<1940][,.N,genre_uniques][order(-N)]
-#genres_melt[aeg<1940][,.N,genre_uniques][order(-N)]
-#genres_melt[genre_uniques=="OTHER"][,.N,.(genres)][order(-N)]
+#genres_melt[aeg>1799&aeg<1940][,.N,genre][order(-N)]
+#genres_melt[aeg<1940][,.N,genre][order(-N)]
+#genres_melt[genre=="OTHER"][,.N,.(genres)][order(-N)]
 ```
 
 
-Genres have been grouped into `r nrow(genres_melt[,.N,genre_uniques][order(-N)])-2` major categories. Many remain uncategorized. A total of `r nrow(genres_melt[genre_uniques=="OTHER"][,.N,.(genres)])` unique keywords are currently classified as OTHER. Top genres there are given in the table below. `r nrow(genres_melt[genre_uniques=="NONE"][,.N,.(genres)])` works in the dataset had no keyword marking.
+Genres have been grouped into `r nrow(genres[,.N,genre][order(-N)])-2` major categories. Many remain uncategorized. A total of `r nrow(genres[genre=="OTHER"][,.(genre_orig=unlist(str_split(genres,"\\$a")))][genre_orig!=""][,.N,.(genre_orig)])` unique keywords are currently classified as OTHER. Top genres there are given in the table below. `r nrow(genres[genre=="NONE"])` works in the dataset had no genre marking.
 
- `r genres_melt[genre_uniques=="OTHER"][,.N,.(genres)][order(-N)][1:10][,genres:=str_remove(genres,"\\$a")] %>% knitr::kable()`
+ `r genres[genre=="OTHER"][,.(genre_orig=unlist(str_split(genres,"\\$a")))][genre_orig!=""][,.N,.(genre_orig)][order(-N)][1:10] %>% knitr::kable()`
 
 
 ```{r plot genres2,eval=T, echo=F, warning=F, fig.height=12, fig.width=8}
 
 #genres_melt[n_genres>1]
-genre_by_time <- genres_melt[,.N,by=.(n_genres,totalsum,decade,genre_uniques)][,N_div:=N/n_genres][,prop:=N_div/sum(N_div),by=.(decade)][,.(prop=sum(prop,na.rm=T),N=sum(N,na.rm=T)),by=.(decade,genre_uniques,totalsum)][,sumprop:=sum(prop),by=.(genre_uniques)][order(-sumprop)][,genre_uniques:=factor(genre_uniques,levels=unique(genre_uniques))]
+genre_by_time <- genres[,.N,by=.(genres_in_pub,genre_in_data,decade,genre)][,N_div:=N/genres_in_pub][,prop:=N_div/sum(N_div),by=.(decade)][,.(prop=sum(prop,na.rm=T),N=sum(N,na.rm=T)),by=.(decade,genre,genre_in_data)][,sumprop:=sum(prop),by=.(genre)][order(-sumprop)][,genre:=factor(genre,levels=unique(genre))]
 
 #[,.(N=sum(N),prop=sum(prop)),.(decade,genre_standardized)]
-grid_expanded <- expand.grid(x=unique(genre_by_time[!is.na(decade)&decade!="20162000"]$decade),y=unique(genre_by_time[!is.na(decade)]$genre_uniques))
-names(grid_expanded) <- c("decade","genre_uniques")
-merged <-unique(merge(genre_by_time[!is.na(decade)],grid_expanded,by=c("decade","genre_uniques"),all=T))
+grid_expanded <- expand.grid(x=unique(genre_by_time[!is.na(decade)&decade!="20162000"]$decade),y=unique(genre_by_time[!is.na(decade)]$genre))
+names(grid_expanded) <- c("decade","genre")
+merged <-unique(merge(genre_by_time[!is.na(decade)],grid_expanded,by=c("decade","genre"),all=T))
 merged[is.na(prop),prop:=0]
 #merged[,.N,decade]
-genre_by_time <- merged[,.(decade,genre_standardized=genre_uniques,totalsum,prop,sumprop,N)]
-factororder<- unique(genre_by_time[order(-totalsum),.(genre_standardized)])[,colorseq:=.I][genre_standardized=="NONE",colorseq:=0][genre_standardized=="OTHER",colorseq:=1][1:23]
-uniquecounts <- genres_melt[decade>1599&decade<2020][,.(uniqueN=uniqueN(RRid))]
+genre_by_time <- merged[,.(decade,genre_standardized=genre,genre_in_data,prop,sumprop,N)]
+factororder<- unique(genre_by_time[order(-genre_in_data),.(genre_standardized)])[,colorseq:=.I][genre_standardized=="NONE",colorseq:=0][genre_standardized=="OTHER",colorseq:=1][1:23]
+uniquecounts <- genres[decade>1599&decade<2020][,.(uniqueN=uniqueN(RRid))]
 
 
-genre_by_time[factororder,on="genre_standardized"][decade>1599&decade<2020][,century:=floor(decade/100)*100][,totalsum:=sum(N,na.rm=T),by=genre_standardized][,genre_w_n:=paste0(genre_standardized, " (n = ",totalsum,")")][,genre_w_n:=fct_reorder(genre_w_n,colorseq)] %>%
+genre_by_time[factororder,on="genre_standardized"][decade>1599&decade<2020][,century:=floor(decade/100)*100][,genre_in_data:=sum(N,na.rm=T),by=genre_standardized][,genre_w_n:=paste0(genre_standardized, " (n = ",genre_in_data,")")][,genre_w_n:=fct_reorder(genre_w_n,colorseq)] %>%
   ggplot(aes(x=decade,fill=genre_w_n,y=prop))+
   geom_area(position='stack')+# theme_classic()+
   theme_bw()+
@@ -399,19 +423,20 @@ genre_by_time[factororder,on="genre_standardized"][decade>1599&decade<2020][,cen
                                      title.hjust =0.5))
 
 # genre_by_time[decade2>1500&decade2<1830] %>%
-#   ggplot(aes(x=decade2,fill=genre_uniques,y=N))+
+#   ggplot(aes(x=decade2,fill=genre,y=N))+
 #   geom_area(position='stack')+# theme_classic()+
 #   theme_bw()+
 #   scale_fill_manual(values=c(cbbPalette,morecolours,cbbPalette))+
 #   theme(legend.key.size = unit(0.5, "cm"))
 
 genre_split <- works[,.(genre_standardized=unlist(str_split(genre_standardized,", "))),by=.(RRid,aeg,set)]
-genre_split[,totalsum:=.N,genre_standardized]
+genre_split[genre_standardized=="dances",genre_standardized:="OTHER"]
+genre_split[,genre_in_data:=.N,genre_standardized]
 genre_split[,decade:=floor(aeg/10)*10]
 genre_split[,decade2:=(floor(aeg/20)*20)+10]#+10 to center for the plot
 genre_split_uniques <- unique(genre_split)
 
-genre_by_time <- genre_split_uniques[,totalsum:=.N,by=genre_standardized] [,.N,by=.(totalsum,decade,genre_standardized,set)][,prop:=N/sum(N),by=.(decade,set)][order(-totalsum)][,genre_standardized:=factor(genre_standardized,levels=unique(genre_standardized))]
+genre_by_time <- genre_split_uniques[,genre_in_data:=.N,by=genre_standardized] [,.N,by=.(genre_in_data,decade,genre_standardized,set)][,prop:=N/sum(N),by=.(decade,set)][order(-genre_in_data)][,genre_standardized:=factor(genre_standardized,levels=unique(genre_standardized))]
 
 
 grid_expanded <- expand.grid(x=unique(genre_by_time$decade),y=unique(genre_by_time$genre_standardized),z=c("eesti","muukeelne"))
@@ -422,11 +447,11 @@ merged[is.na(N),N:=0]
 genre_by_time <- merged
 
 
-factororder<- unique(genre_by_time[order(-totalsum),.(genre_standardized)])[,colorseq:=.I][genre_standardized=="NONE",colorseq:=0][genre_standardized=="OTHER",colorseq:=1][1:23]
+factororder<- unique(genre_by_time[order(-genre_in_data),.(genre_standardized)])[,colorseq:=.I][genre_standardized=="NONE",colorseq:=0][genre_standardized=="OTHER",colorseq:=1][1:23]
 
 uniquecounts <- genre_split[decade>1599&decade<2020][,.(uniqueN=uniqueN(RRid)),set]
 
-p1 <- genre_by_time[factororder,on="genre_standardized"][set=="eesti"][decade>1599&decade<2020][,totalsum:=sum(N),by=genre_standardized][,genre_w_n:=paste0(genre_standardized, " (n = ",totalsum,")")][,genre_w_n:=fct_reorder(genre_w_n,colorseq)] %>%
+p1 <- genre_by_time[factororder,on="genre_standardized"][set=="eesti"][decade>1599&decade<2020][,sum_decade:=sum(N),decade][sum_decade>0][,genre_in_data:=sum(N),by=genre_standardized][,genre_w_n:=paste0(genre_standardized, " (n = ",genre_in_data,")")][,genre_w_n:=fct_reorder(genre_w_n,colorseq)] %>%
   ggplot(aes(x=decade,fill=genre_w_n,y=prop))+
   geom_area(position='stack')+# theme_classic()+
   theme_bw()+
@@ -438,7 +463,7 @@ p1 <- genre_by_time[factororder,on="genre_standardized"][set=="eesti"][decade>15
 #p1
 
 
-p2 <- genre_by_time[factororder,on="genre_standardized"][set=="muukeelne"][decade>1599&decade<2020][,totalsum:=sum(N),by=genre_standardized][,genre_w_n:=paste0(genre_standardized, " (n = ",totalsum,")")][,genre_w_n:=fct_reorder(genre_w_n,colorseq)] %>%
+p2 <- genre_by_time[factororder,on="genre_standardized"][set=="muukeelne"][decade>1599&decade<2020][,genre_in_data:=sum(N),by=genre_standardized][,genre_w_n:=paste0(genre_standardized, " (n = ",genre_in_data,")")][,genre_w_n:=fct_reorder(genre_w_n,colorseq)] %>%
   ggplot(aes(x=decade,fill=genre_w_n,y=prop))+
   geom_area(position='stack')+# theme_classic()+
   theme_bw()+
@@ -456,29 +481,57 @@ gridExtra::grid.arrange(p1,p2,ncol=1)
 ```
 
 
+## Languages
 
+For the dataset that is not in Estonian, language has been marked in combination of existing metainformation and automatic language extraction based on the title of the work. An overview of the languages is given below. Each work is just given one language here and multilinguality is not included in this measure.
 
-```{r, echo=F, warning=F,eval=F}
+```{r, echo=F, warning=F,eval=T}
 ## languages overview
 #Informatsioon keelte kohta olemas.
 works2 <- works[set=="muukeelne"]
-nrow(works2[aeg>1799&aeg<1941][str_detect(keel,"keel")|str_detect(keeled2,"keel")|str_detect(keeled3,"keel")])/nrow(works2[aeg>1799&aeg<1941])
+#nrow(works2[aeg>1799&aeg<1941][str_detect(keel,"keel")|str_detect(keeled2,"keel")|str_detect(keeled3,"keel")])/nrow(works2[aeg>1799&aeg<1941])
 
 
-nrow(works2[aeg>1799&aeg<1941][!is.na(langauto)])/nrow(works2[aeg>1799&aeg<1941])
-nrow(works2[aeg>1799&aeg<1941][!is.na(langauto4)])/nrow(works2[aeg>1799&aeg<1941])
+#nrow(works2[aeg>1799&aeg<1941][!is.na(langauto)])/nrow(works2[aeg>1799&aeg<1941])
+#nrow(works2[aeg>1799&aeg<1941][!is.na(langauto4)])/nrow(works2[aeg>1799&aeg<1941])
 
-check <- works2[!is.na(langauto4),.N,.(langauto,langauto4)]
+check <- works2[!is.na(langauto4),.N,.(langauto,langauto4)][order(-N)]
+#check[1:20]
+works2[,langauto4_N:=.N,langauto4]
 check <- works2[!is.na(langauto4)&!is.na(langauto),.N,.(langauto,langauto4)]
-mergecheck <- data.table(langauto4=unique(works2[,langauto4]),langauto4_conv=c("de","la","en","pl","dk","sv","ru","et","lv",NA))
+mergecheck <- data.table(langauto4=unique(works2[order(-langauto4_N),langauto4]),langauto4_conv=c("ru","de","en","la","et","dk","sv","lv","pl",NA,"fr","fi","et"))
 check2 <- works2[aeg>1799&aeg<1941][mergecheck,on="langauto4"][langauto==langauto4_conv,match:=T]
-check2[is.na(match)]
+#check2[is.na(match)]
 check3 <- check2[,.N,match][,prop:=N/sum(N)]
 
 works2[,langauto5:=langauto4]
 works2[is.na(langauto4),langauto5:=langauto]
-nrow(works2[aeg>1799&aeg<1941][!is.na(langauto5)])/nrow(works2[aeg>1799&aeg<1941])
+#nrow(works2[aeg>1799&aeg<1941][!is.na(langauto5)])/nrow(works2[aeg>1799&aeg<1941])
 
+
+grid <- works2[,CJ(langauto5=unique(langauto5),decade=unique(decade))]
+p1 <- works2[,.N,.(langauto5,decade)][grid,on=c("langauto5","decade")][is.na(N),N:=0][decade>1599&decade<2020][langauto5!=""][,prop:=N/sum(N),.(decade)][,lang_in_data:=sum(N),by=langauto5][,lang_w_n:=paste0(langauto5, " (n = ",lang_in_data,")")][,lang_w_n:=fct_reorder(lang_w_n,-lang_in_data)] %>%
+  ggplot(aes(x=decade,fill=lang_w_n,y=prop))+
+  geom_area(position='stack')+# theme_classic()+
+  theme_bw()+
+  scale_fill_manual(values=c(cbbPalette,morecolours,cbbPalette,morecolours),name=paste0("Language = Not Estonian (n = ",nrow(works2[!is.na(langauto5)]),")"))+
+  labs(title="Language distribution of publications not in Estonian (1600-2020)",y="Proportion",x="Decade")+
+  theme(legend.key.size = unit(0.4, "cm"),legend.position="bottom")+
+  guides(fill=guide_legend(title.position="top", 
+                                     title.hjust =0.5))
+p1
+
+p2 <- works2[,.N,.(langauto5,decade)][grid,on=c("langauto5","decade")][is.na(N),N:=0][decade>1899&decade<2020][langauto5!=""][,prop:=N/sum(N),.(decade)][,lang_in_data:=sum(N),by=langauto5][,lang_w_n:=paste0(langauto5, " (n = ",lang_in_data,")")][,lang_w_n:=fct_reorder(lang_w_n,-lang_in_data)] %>%
+  ggplot(aes(x=decade,fill=lang_w_n,y=prop))+
+  geom_area(position='stack')+# theme_classic()+
+  theme_bw()+
+  scale_fill_manual(values=c(cbbPalette,morecolours,cbbPalette,morecolours),name=paste0("Language = Not Estonian (n = ",nrow(works2[!is.na(langauto5)]),")"))+
+  labs(title="Language distribution of publications not in Estonian (1900-2020)",y="Proportion",x="Decade")+
+  theme(legend.key.size = unit(0.4, "cm"),legend.position="bottom")+
+  guides(fill=guide_legend(title.position="top", 
+                                     title.hjust =0.5))
+p2
+  
 #not enough info here
 # works2[,intra1:=NULL]
 # works2[,intra2:=NULL]
@@ -498,7 +551,7 @@ nrow(works2[aeg>1799&aeg<1941][!is.na(langauto5)])/nrow(works2[aeg>1799&aeg<1941
 Publication locations have also been joined with geographic information in the GeoNames database. This allows the publication locations also to be displayed on a map. To see the interactive version of the map, use the html overview.
 
 ```{r overview works, echo=F, warning=F}
-works_cities <- fread(here("data/publish/tidy_ENB/data/ENB_works_geotagged.tsv"),sep="\t")
+works_cities <- fread(cmd="unzip -p data/ENB_works_geotagged.tsv.zip",sep="\t")
 #works_cities <- fread('unzip -p data/publish/tidy_ENB/data/ENB_works.tsv.zip',sep="\t")
 #top publishing locations with gis here.
 
@@ -516,22 +569,23 @@ europe <- worldmap[worldmap$continent == 'Europe',]
 
 
 top_places <- works_cities[,.N,.(koht,V5,V6)][order(-N)]#[1:100]
-ggplot(data = world) +
+plot1 <- ggplot(data = world) +
     geom_sf(alpha=0.02) +
     geom_point(data = top_places, aes(x = V6, y = V5,size=N, text=paste0(koht, " (n = ", N, ")")),  
         shape = 20, color = "darkred") +
-scale_size(trans="log10") +
-  theme_bw()+
-  labs(x="",y="")# +
+    scale_size(trans="log10") +
+    theme_bw()+
+    labs(x="",y="")# +
     #coord_sf(xlim = c(-100, 78), ylim = c(24.5, 83), expand = FALSE)
 
+plot1
 #ggplotly()
 
 
 top_places_by_time <- works_cities[,decade2:=floor(aeg/10)*10][,.N,.(koht,V5,V6,decade2)][!is.na(decade2)][decade2<2020]#[order(-N)]#[1:100]
 top_places_by_time[,ester:=paste0("https://www.ester.ee/search~S1*est/X?SEARCH=u:(",koht,")&searchscope=1&Da=",decade2,"&Db=",decade2+9,"&m=a")] #&l=est saaks teha eestikeelseks aga siis poleks ka päris see sama siin.
 
-ggplot(data = world) +
+plot2 <- ggplot(data = world) +
     geom_sf(alpha=0.2) +
     geom_point(data = top_places_by_time, aes(x = V6, y = V5,size=N, ids= koht, text=paste0(koht, " (n = ", N, ")"),frame=decade2,customdata=ester),  
         shape = 20, color = "darkred") +
@@ -539,7 +593,7 @@ ggplot(data = world) +
   theme_bw()# +
     #coord_sf(xlim = c(-100, 78), ylim = c(24.5, 83), expand = FALSE)
 
-p <- ggplotly() %>% 
+plot2_interactive <- ggplotly(plot2) %>% 
   animation_opts(
     frame = 1000, 
     #transition = 0, 
@@ -548,7 +602,7 @@ p <- ggplotly() %>%
 
 library(htmlwidgets)
 onRender(
-  p, "
+  plot2_interactive, "
   function(el) {
     el.on('plotly_click', function(d) {
       var url = d.points[0].customdata;
