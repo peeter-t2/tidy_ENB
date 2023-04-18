@@ -174,16 +174,16 @@ variables_overview
 An overview of the coverage of the data is given below. Grey areas indicate datapoints that do have the information of that column, black areas the datapoints that do not have the information of that column. For example `r variables_overview[variable=="kirjastus",prop]`% of the books have information on the publisher, however just `r variables_overview[variable=="autor_id",prop]`% of the books have information on the author. `r variables_overview[variable=="links",prop]`% of the books have a link to an online digital copy.
 
 
-```{r, echo=F, warning=F, fig.height=8, fig.width=16}
+```{r, echo=F, warning=F, fig.height=8, fig.width=12,include=F}
 
-gathered_DT %>%
+missingness_p <- gathered_DT %>%
   ggplot()+
   geom_tile(aes(x=variable,y=rows,fill=valueType))+
   theme_minimal() +
   theme(axis.text.x = ggplot2::element_text(angle = 45,
                                                      vjust = 1,
                                                      hjust = 1)) +
-  labs(x = "",  y = "Observations") +
+  labs(x = "",  y = "Observations", title="Data available in ENB") +
     # flip the axes
     scale_y_reverse() +
   theme(axis.text.x = ggplot2::element_text(hjust = 0.5))+
@@ -195,8 +195,8 @@ gathered_DT %>%
     ggplot2::guides(fill = ggplot2::guide_legend(reverse = TRUE)) +
     ggplot2::theme(legend.position = "bottom") +
     # fix up the location of the text
-ggplot2::theme(axis.text.x = ggplot2::element_text(hjust = 0))+
-ggplot2::scale_x_discrete(position = "top")
+  ggplot2::theme(axis.text.x = ggplot2::element_text(hjust = 0))+
+  ggplot2::scale_x_discrete(position = "top")
 
 #keel to keywords
 #change names to something gathered...
@@ -208,7 +208,11 @@ ggplot2::scale_x_discrete(position = "top")
     # get the values here so plotly can make them visible
     #dplyr::mutate(value = vis_extract_value_(x))
 
+ggsave("plots/missingness_p.png",missingness_p,height=8,width=16)
+
 ```
+
+![Data available in ENB](../plots/missingness_p.png)
 
 
 ### Cities
