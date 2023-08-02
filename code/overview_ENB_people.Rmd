@@ -1,0 +1,184 @@
+---
+title: "Overview ENB people"
+output:
+  html_document:
+    fig_caption: yes
+    df_print: paged
+    code_folding: hide
+ # bookdown::html_document2: default
+  pdf_document:
+    latex_engine: xelatex
+    fig_caption: true
+editor_options:
+  chunk_output_type: console
+delete_merged_file: true
+---
+
+```{r setup,echo=F}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r setup2, echo=F, warning=F,results='hide', include=FALSE}
+library(here)
+library(data.table)
+library(tidyverse)
+library(plotly)
+library(naniar)
+options(scipen=99999)
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+morecolours <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
+
+library("rnaturalearth")
+#library("rnaturalearthdata")
+library(sf)
+#library(rgeos)
+#install.packages(c("cowplot", "googleway", "ggplot2", "ggrepel", 
+#"ggspatial", "libwgeom", "sf", "rnaturalearth", "rnaturalearthdata"))
+```
+
+
+
+```{r, echo=F}
+library(data.table)
+library(tidyverse)
+library(ggridges)
+people <-  fread(cmd="unzip -p data/ENB_people_geotagged.tsv.zip",sep=",")
+#names(people)
+people[,birthyear:=as.numeric(str_extract(date_simple,"[0-9]{4}"))]
+people[,.(.N),.(birthyear)][birthyear>1750] %>% #[birthyear>1750][birthyear<1920]
+  ggplot(aes(x=birthyear))+
+  geom_ridgeline_gradient(aes(y=0,height=N),gradient_lwd=1,color="grey30")+
+  theme_bw()+
+  labs(y="Number of authors",x="Birthyear",title="Authors in Estonian National Bibliography (birthyear > 1750)")
+
+```
+
+
+```{r read ENB, eval=T, echo=F}
+works <- fread(cmd="unzip -p data/ENB_works.tsv.zip",sep="\t")
+works_et <- works[set=="eesti"]
+
+```
+
+```{r, echo =F}
+works[aeg<=1940&aeg>=1800,exists:=1]
+works[aeg<=1940&aeg>=1800,reprnr:=cumsum(exists),by=.(comptitle,autor_id)]
+works[aeg<=1940&aeg>=1800,editions2:=max(reprnr),by=.(comptitle,autor_id)]#a ok, need on sel perioodil
+#works[reprnr!=1]
+
+#do that within the timeframe
+multieditions <- works[aeg<=1940&aeg>=1800][set=="eesti"][editions2!=1][order(comptitle)]
+# There are 6736 reprint instances out of 39800 Estonian publications at the time
+
+# The works have primary authors, and sometimes secondary authors.
+# If the secondary author includes a "translator", we expect that the first author is not Estonian.
+
+# For string detecting and splitting, add an extra marker
+works[teised_autorid!="",teised_autorid:=paste0(teised_autorid," $a")]
+
+# Store translators and editors in a separate column
+#testtranslator <- works[aeg>1800&aeg<1940][str_detect(teised_autorid,"tõlkija")] # Check if translator finding works
+works[str_detect(teised_autorid,"tõlkija"),autor2:=str_subset(unlist(str_extract_all(teised_autorid,"\\$a.+?(?=\\$a)")),"tõlkija")[1],by=teised_autorid]
+
+
+# If the author name is missing, use editors as the associated name.
+#testkoostaja <- works[aeg>1800&aeg<1940][autor_id==""&teised_autorid!=""&is.na(autor2)&str_detect(teised_autorid,"koostaja")]
+works[autor_id==""&teised_autorid!=""&is.na(autor2)&str_detect(teised_autorid,"koostaja"),autor2:=str_subset(unlist(str_extract_all(teised_autorid,"\\$a.+?(?=\\$a)")),"koostaja")[1],by=teised_autorid]
+works[autor_id==""&teised_autorid!=""&is.na(autor2)&str_detect(teised_autorid,"toimetaja"),autor2:=str_subset(unlist(str_extract_all(teised_autorid,"\\$a.+?(?=\\$a)")),"toimetaja")[1],by=teised_autorid]
+works[,autor2_name:=str_extract(autor2,"\\$a[^\\$]+")]
+works[,autor2_dates:=str_extract(autor2,"\\$d[^\\$]+")]
+
+
+
+# A test for all books with Aavik at some author position
+testcoauthors <- works[str_detect(autor_id,"Aavik")|str_detect(teised_autorid,"Aavik")]
+
+
+# Only first occurrences (duplicates removed) Estonian publications at the time.
+relevant_works_all <-works[aeg<=1940&aeg>=1800][set=="eesti"]
+relevant_works <-works[aeg<=2023&aeg>=1800]#[set=="eesti"][reprnr==1]
+
+#relevant_works[,all_authors:=paste0(autor_id,teised_autorid)]
+relevant_works[autor2!="",autor_id:=autor2] #replaces original author with translator or editor
+#relevant_works[autor2!="",autor_id:=autor2]
+relevant_works[,all_authors:=paste0(autor_id,teised_autorid)]
+
+#The number of new books per year
+# relevant_works[,.N,.(autor_id,aeg)][,.N,.(aeg)][data.table(aeg=1800:1940),on="aeg"] %>% 
+#   ggplot(aes(x=aeg,y=N))+
+#   geom_line()+
+#   theme_bw()#+
+#   #scale_y_log10()
+
+```
+
+The dataset includes a total of `r ENB_authors_split[,uniqueN(coauthor)]` unique authornames, `r ENB_authors_split[set=="eesti"][,uniqueN(coauthor)]` for Estonian language collection and `r ENB_authors_split[set!="eesti"][,uniqueN(coauthor)]` for non-Estonian language collection.
+
+```{r, echo=F}
+
+# Taking the list of all associated names (having removed the source authors of translators)
+ENB_authors_split <- relevant_works[,.(comptitle,aeg,RRid,all_authors,set)][,all_authors:=str_replace(all_authors,"\\.$","")][,.(coauthor=unlist(str_split(all_authors,"\\$a"))),by=.(comptitle,aeg,RRid,all_authors,set)]
+
+
+#ENB_authors_split[set=="eesti"][,uniqueN(coauthor)]
+#  [1] 10555
+#ENB_authors_split[set!="eesti"][,uniqueN(coauthor)]
+#[1] 8929
+#ENB_authors_split[,uniqueN(coauthor)]
+#[1] 18672
+
+# Remove the attached metainformation from the names
+ENB_authors_split[,coauthor:=str_replace(coauthor,"\\$e.*","")]
+ENB_authors_split[,coauthor:=str_replace(coauthor,"\\$t.*","")]
+#ENB_authors_split[,coauthor:=str_replace(coauthor,"\\$t.*","")]
+ENB_authors_split[,coauthor:=str_replace(coauthor,"\\$a$","")]
+ENB_authors_split[,coauthor:=trimws(coauthor)]
+ENB_authors_split[,coauthor:=str_replace(coauthor,"\\.$","")]
+ENB_authors_split[,coauthor:=str_replace(coauthor,",$","")]
+ENB_authors_split[,coauthor:=trimws(coauthor)]
+ENB_authors_split[,coauthor:=str_replace(coauthor,"^\\$a","")]
+ENB_authors_split <- ENB_authors_split[coauthor!=""]
+ENB_authors_split[,coauthor:=paste0("$a",coauthor)]
+ENB_authors_split <- unique(ENB_authors_split)
+#ENB_authors_split <- ENB_authors_split[nchar(coauthor)>7]
+
+person_ids <- people[,.(coauthor=unlist(str_split(RR_all_names," && "))),by=names(people)][coauthor!=""]
+person_ids <- person_ids[!duplicated(coauthor)]
+
+ENB_authors_w_metadata <- unique(merge(ENB_authors_split,unique(person_ids),by.x="coauthor",by.y="coauthor",all.x=T,allow.cartesian = F))#[,.(RRid,viaf,coauthor)])
+#ENB_authors_w_metadata[is.na(RRpid2)]
+
+
+ENB_authors_split[,name:=str_extract(coauthor,"\\$a[^\\$]+")]
+ENB_authors_split[,date:=str_extract(coauthor,"\\$d[^\\$]+")]
+ENB_authors_split[,name:=str_remove(name,"^\\$a")]
+ENB_authors_split[,date:=str_remove(date,"^\\$d")]
+ENB_authors_split[,name:=str_remove(name,"[.,;]$")]
+ENB_authors_split[,name:=trimws(name)]
+ENB_authors_split[,author_det:=paste0(name,",",date)]
+plotdata <- ENB_authors_split[,.(books=uniqueN(RRid),authors=uniqueN(author_det)),.(year=aeg)][,authors_per_book:=authors/books]
+plotdata[year<2010] %>% 
+  ggplot()+
+  geom_line(aes(x=year,y=authors,color="people")) +
+  geom_line(aes(x=year,y=books,color="works")) +
+  theme_bw()+
+  #labs(x="Aasta",y="N",title="Eestikeelsed raamatud ja eestlasted")+
+  labs(x="",y="N",title="Books and people in each year in ENB (1800-2010)", color="")
+  #guides(color=F)
+
+
+# Simple list of all unique names
+# Exclude simple character combinations that couldn't be identified
+author_list <- unique(ENB_authors_split[,.(coauthor)][nchar(coauthor)>7])
+author_list[,name:=str_extract(coauthor,"\\$a[^\\$]+")]
+author_list[,date:=str_extract(coauthor,"\\$d[^\\$]+")]
+author_list[,name:=str_remove(name,"^\\$a")]
+author_list[,date:=str_remove(date,"^\\$d")]
+author_list[,name:=str_remove(name,"[.,;]$")]
+author_list[,name:=trimws(name)]
+
+```
+
+

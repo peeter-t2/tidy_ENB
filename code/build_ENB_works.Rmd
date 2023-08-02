@@ -30,7 +30,7 @@ marc2tidy made into a separate function.
 
 ```{r}
 library(here)
-source(here("code/0_functions/0_libraries.R"))
+source(here("../../../code/0_functions/0_libraries.R"))
 #source(here("code/0_functions/ENB_package/R/marc2tidy_function.R"))
 #source(here("code/0_functions/ENB_package/R/harmonize_genres.R"))
 #remotes::install_github("peeter-t2/harmonize_ENB")
@@ -58,7 +58,7 @@ library(ENBtools)
 # Openrefine Data Transfer Tool
 
 # give the mrc as source file
-# and tsv as save file (dropdown menu below,
+# and tsv as save file (dropdown menu below, or simply write save file with .tsv extension)
 # use export to openrefine and run,
 # this should give a wellformed tsv file from xml stored marc file.
 
@@ -133,7 +133,19 @@ fwrite(works,here("data/processed/ENB_works_both_v_04_01_2022.tsv"),sep="\t")
 
 ```{r harmonization code}
 
-works <- fread(here("data/processed/ENB_works_both_v_04_01_2022.tsv"),sep="\t")
+#works <- fread("../../processed/ENB_works_both_v_04_01_2022.tsv",sep="\t")
+works <- fread(cmd="unzip -p data/ENB_works.tsv.zip",sep="\t")
+kirjastused <- works[,.(N=.N,min_time=min(aeg,na.rm=T),max_time=max(aeg,na.rm=T)),kirjastus][order(kirjastus,-N)][kirjastus!=""]
+kirjastused <- harmonize_publishers(kirjastused) 
+kirjastused <- kirjastused[,.(kirjastus_orig,kirjastus_standardized=kirjastus,N,min_time,max_time,min_time_st=kirjastus_first,max_time_st=kirjastus_last)]
+kirjastused[,standardizing_name:=str_remove(kirjastus_standardized,'^"+')]
+kirjastused[,standardizing_name:=str_remove(standardizing_name,'"+$')]
+kirjastused[,standardizing_name:=str_replace(standardizing_name,'""+','"')]
+kirjastused <- kirjastused[order(standardizing_name)]
+kirjastused[,manual_verified:=""]
+
+fwrite(kirjastused,"data/all_publishers.tsv",sep="\t")
+
 #### harmonize publishers
 works <- harmonize_publishers(works) #keeps the original in kirjastus_orig, also creates variable for first year publisher was present
 
@@ -141,6 +153,17 @@ works <- harmonize_publishers(works) #keeps the original in kirjastus_orig, also
 
 works <- harmonize_places(works) #keeps the original in koht_orig
 works[str_detect(koht,"New York"),koht:="New York City"]
+
+# 
+# kohad <- works[,.(N=.N,min_time=min(aeg,na.rm=T),max_time=max(aeg,na.rm=T)),kirjastus][order(kirjastus,-N)][kirjastus!=""]
+# kohad <- harmonize_places(kohad) 
+# kirjastused <- kirjastused[,.(kirjastus_orig,kirjastus_standardized=kirjastus,N,min_time,max_time,min_time_st=kirjastus_first,max_time_st=kirjastus_last)]
+# kirjastused[,standardizing_name:=str_remove(kirjastus_standardized,'^"+')]
+# kirjastused[,standardizing_name:=str_remove(standardizing_name,'"+$')]
+# kirjastused[,standardizing_name:=str_replace(standardizing_name,'""+','"')]
+# kirjastused <- kirjastused[order(standardizing_name)]
+# kirjastused[,manual_verified:=""]
+# 
 
 ```
 

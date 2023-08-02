@@ -78,7 +78,7 @@ pseudonyms[,name:=trimws(name)]
 pseudonyms_together <- pseudonyms[,.(dnb_all_names=paste0(name,collapse=" && ")),.(viaf,RR_mastername)]
 
 people <- merge(people[,-c("name")],pseudonyms_together,by=c("viaf","RR_mastername"),all.x=T)
-duplicates_because_of_RRids <- people2[duplicated(viaf)&!is.na(viaf)]
+#duplicates_because_of_RRids <- people2[duplicated(viaf)&!is.na(viaf)]
 
 fwrite(people,here("data/publish/tidy_ENB/data/ENB_people.tsv"))
 ```
@@ -161,26 +161,26 @@ w_dnb_data_locs =merge(people,bothmethods[!duplicated(bplace)],by="bplace",all.x
 
 
 #WIKIDATA BPLACE COORDS HERE, w coords
-unique(people[!is.na(locbirth)&locbirth!="",.(name,locbirth)]) #804 authors have some birthlace info, but includes classics...
+#unique(people[!is.na(locbirth)&locbirth!="",.(name,locbirth)]) #804 authors have some birthlace info, but includes classics...
 
 #1049 nime kõik koos
-unique(w_dnb_data_locs[(!is.na(locbirth)&locbirth!="")|V5!="NA",.(name,locbirth,V5)])
-unique(w_dnb_data_locs[V5!="NA",.(name,locbirth,V5)])
+#unique(w_dnb_data_locs[(!is.na(locbirth)&locbirth!="")|V5!="NA",.(name,locbirth,V5)])
+#unique(w_dnb_data_locs[V5!="NA",.(name,locbirth,V5)])
 
-people[,uniqueN(pbirthLabel)] #w 444 labels, so all places have also coords
+#people[,uniqueN(pbirthLabel)] #w 444 labels, so all places have also coords
 
-options(device="RStudioGD")
-w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)][,uniqueN(name),.(birthyear=floor(as.numeric(str_extract(date_simple,"[0-9]{4}"))/10)*10)][birthyear>1800] %>% 
- ggplot(aes(x=birthyear,y=V1))+
- geom_point()
-
-w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)][,uniqueN(name),.(birthyear=as.numeric(str_extract(date_simple,"[0-9]{4}")))][birthyear>1800][,sum(V1)]
-
-w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)][,uniqueN(name)]
-w_dnb_data_locs[!is.na(V5)][,uniqueN(name)]
-
-w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)]
-
+#options(device="RStudioGD")
+# w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)][,uniqueN(name),.(birthyear=floor(as.numeric(str_extract(date_simple,"[0-9]{4}"))/10)*10)][birthyear>1800] %>% 
+#  ggplot(aes(x=birthyear,y=V1))+
+#  geom_point()
+# 
+# w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)][,uniqueN(name),.(birthyear=as.numeric(str_extract(date_simple,"[0-9]{4}")))][birthyear>1800][,sum(V1)]
+# 
+# w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)][,uniqueN(name)]
+# w_dnb_data_locs[!is.na(V5)][,uniqueN(name)]
+# 
+# w_dnb_data_locs[!is.na(locbirth)|!is.na(V5)]
+# 
 
 
 
@@ -191,8 +191,8 @@ w_dnb_data_locs[!is.na(locbirth)&locbirth!="",lon9:=as.numeric(trimws(str_extrac
 w_dnb_data_locs[!is.na(locbirth)&locbirth!="",lat9:=as.numeric(trimws(str_extract(locbirth," [0-9\\.]+")))]
 
 #prefer wikidata to dnb
-w_dnb_data_locs[is.na(lon9),lon9:=V5]
-w_dnb_data_locs[is.na(lon9),lat9:=V6]
+w_dnb_data_locs[is.na(lat9),lat9:=V5]
+w_dnb_data_locs[is.na(lon9),lon9:=V6]
 
 
 fwrite(w_dnb_data_locs,here("data/publish/tidy_ENB/data/ENB_people_geotagged.tsv"))
